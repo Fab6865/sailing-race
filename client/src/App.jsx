@@ -7,6 +7,8 @@ import Garage from './pages/Garage';
 import Rankings from './pages/Rankings';
 import Welcome from './pages/Welcome';
 import Admin from './pages/Admin';
+const API_URL = 'https://sailing-race.onrender.com';
+
 
 function App() {
   const [player, setPlayer] = useState(null);
@@ -31,7 +33,7 @@ function App() {
 
   const fetchPlayer = async (playerId) => {
     try {
-      const res = await fetch(`/api/player/${playerId}`);
+const res = await fetch(`${API_URL}/api/player/${playerId}`);
       if (res.ok) {
         const data = await res.json();
         setPlayer(data);
@@ -46,7 +48,7 @@ function App() {
 
   const handleCreatePlayer = async (name) => {
     try {
-      const res = await fetch('/api/player/create', {
+      const res = await fetch(`${API_URL}/api/player/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
