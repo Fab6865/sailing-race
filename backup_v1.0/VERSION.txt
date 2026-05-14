@@ -1,0 +1,19 @@
+SAILING RACE - BACKUP v1.0
+===========================
+
+Date: 2026-05-07
+Description: Version fonctionnelle de base
+
+Fonctionnalités incluses:
+- Simulation temps réel (tick 60s)
+- Vent évolutif
+- 20 bots IA (4 niveaux)
+- 3 courses pré-configurées
+- Contrôle cap + voiles
+- Système d'upgrades
+- Dashboard, carte live, garage, classements
+
+Pour restaurer:
+1. Copier le contenu de ce dossier vers le dossier parent
+2. npm install dans server/ et client/
+3. npm run dev dans les deux dossiers

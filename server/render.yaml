@@ -1,0 +1,32 @@
+services:
+  # Backend API Server
+  - type: web
+    name: sailing-race-api
+    env: node
+    plan: free
+    repo: https://github.com/ton-username/sailing-race
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+
+  # Frontend Static Site
+  - type: web
+    name: sailing-race-frontend
+    env: static
+    plan: free
+    repo: https://github.com/ton-username/sailing-race
+    rootDir: client
+    buildCommand: npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+    pullRequestPreviewsEnabled: true
+    envVars:
+      - key: VITE_API_URL
+        value: https://sailing-race-api.onrender.com
