@@ -1,0 +1,22 @@
+{
+  "name": "sailing-race-server",
+  "version": "1.0.0",
+  "description": "Real-time sailing race simulation server",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/src/index.js",
+    "dev": "node --watch server/src/index.js",
+    "build": "echo 'No build step needed'",
+    "postinstall": "cd server && npm install"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "sql.js": "^1.8.0",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
