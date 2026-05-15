@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { API_URL } from '../config';
 
 function Rankings({ player }) {
   const [activeTab, setActiveTab] = useState('history');
@@ -16,8 +17,8 @@ function Rankings({ player }) {
   const fetchData = async () => {
     try {
       const [historyRes, racesRes] = await Promise.all([
-        fetch(`/api/player/${player.id}/history`),
-        fetch('/api/race/list?status=finished')
+        fetch(`${API_URL}/api/player/${player.id}/history`),
+        fetch(`${API_URL}/api/race/list?status=finished`)
       ]);
 
       if (historyRes.ok) {
@@ -34,7 +35,7 @@ function Rankings({ player }) {
 
   const fetchRaceResults = async (raceId) => {
     try {
-      const res = await fetch(`/api/race/${raceId}/history`);
+      const res = await fetch(`${API_URL}/api/race/${raceId}/history`);
       if (res.ok) {
         setRaceResults(await res.json());
         setSelectedRace(raceId);

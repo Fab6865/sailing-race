@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { API_URL } from '../config';
 
 function Dashboard({ player }) {
   const [races, setRaces] = useState([]);
@@ -15,14 +16,14 @@ function Dashboard({ player }) {
   const fetchData = async () => {
     try {
       // Fetch races with player info
-      const racesRes = await fetch(`/api/race/list?playerId=${player.id}`);
+      const racesRes = await fetch(`${API_URL}/api/race/list?playerId=${player.id}`);
       if (racesRes.ok) {
         const racesData = await racesRes.json();
         setRaces(racesData);
       }
 
       // Check current race
-      const currentRes = await fetch(`/api/player/${player.id}/current-race`);
+      const currentRes = await fetch(`${API_URL}/api/player/${player.id}/current-race`);
       if (currentRes.ok) {
         const currentData = await currentRes.json();
         setCurrentRace(currentData.inRace ? currentData : null);
@@ -35,7 +36,7 @@ function Dashboard({ player }) {
 
   const handleRegister = async (raceId) => {
     try {
-      const res = await fetch(`/api/race/${raceId}/register`, {
+      const res = await fetch(`${API_URL}/api/race/${raceId}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boatId: player.boat.id })
@@ -56,7 +57,7 @@ function Dashboard({ player }) {
     if (!confirm('Effacer toutes les courses terminées ?')) return;
     
     try {
-      const res = await fetch('/api/admin/clear-finished-races', {
+      const res = await fetch(`${API_URL}/api/admin/clear-finished-races`, {
         method: 'POST'
       });
       

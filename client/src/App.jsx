@@ -7,7 +7,7 @@ import Garage from './pages/Garage';
 import Rankings from './pages/Rankings';
 import Welcome from './pages/Welcome';
 import Admin from './pages/Admin';
-const API_URL = 'https://sailing-race.onrender.com';
+import { API_URL } from './config';
 
 
 function App() {

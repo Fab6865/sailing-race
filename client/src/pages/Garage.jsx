@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../config';
 
 function Garage({ player, onUpdate }) {
   const [upgrades, setUpgrades] = useState([]);
@@ -15,9 +16,9 @@ function Garage({ player, onUpdate }) {
   const fetchData = async () => {
     try {
       const [upgradesRes, playerUpgradesRes, categoriesRes] = await Promise.all([
-        fetch('/api/upgrade/list'),
-        fetch(`/api/upgrade/player/${player.id}`),
-        fetch('/api/upgrade/categories')
+        fetch(`${API_URL}/api/upgrade/list`),
+        fetch(`${API_URL}/api/upgrade/player/${player.id}`),
+        fetch(`${API_URL}/api/upgrade/categories`)
       ]);
 
       if (upgradesRes.ok) {
@@ -38,7 +39,7 @@ function Garage({ player, onUpdate }) {
   const handlePurchase = async (upgradeId) => {
     setPurchasing(upgradeId);
     try {
-      const res = await fetch('/api/upgrade/buy', {
+      const res = await fetch(`${API_URL}/api/upgrade/buy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId: player.id, upgradeId })

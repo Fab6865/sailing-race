@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { API_URL } from '../config';
 
 function Admin() {
   const [races, setRaces] = useState([]);
@@ -15,8 +16,8 @@ function Admin() {
   const fetchData = async () => {
     try {
       const [racesRes, simRes] = await Promise.all([
-        fetch('/api/admin/races'),
-        fetch('/api/admin/simulation')
+        fetch(`${API_URL}/api/admin/races`),
+        fetch(`${API_URL}/api/admin/simulation`)
       ]);
 
       if (racesRes.ok) setRaces(await racesRes.json());
@@ -29,7 +30,7 @@ function Admin() {
 
   const handleSpeedChange = async (multiplier) => {
     try {
-      const res = await fetch('/api/admin/simulation/speed', {
+      const res = await fetch(`${API_URL}/api/admin/simulation/speed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ multiplier })
@@ -45,7 +46,7 @@ function Admin() {
 
   const handleTriggerTick = async () => {
     try {
-      await fetch('/api/admin/simulation/tick', { method: 'POST' });
+      await fetch(`${API_URL}/api/admin/simulation/tick`, { method: 'POST' });
       fetchData();
     } catch (err) {
       console.error('Failed to trigger tick:', err);
@@ -54,7 +55,7 @@ function Admin() {
 
   const handleForceStart = async (raceId) => {
     try {
-      await fetch(`/api/admin/race/${raceId}/force-start`, { method: 'POST' });
+      await fetch(`${API_URL}/api/admin/race/${raceId}/force-start`, { method: 'POST' });
       fetchData();
     } catch (err) {
       console.error('Failed to force start:', err);
@@ -64,7 +65,7 @@ function Admin() {
   const handleResetRace = async (raceId) => {
     if (!confirm('Réinitialiser cette course ?')) return;
     try {
-      await fetch(`/api/admin/race/${raceId}/reset`, { method: 'POST' });
+      await fetch(`${API_URL}/api/admin/race/${raceId}/reset`, { method: 'POST' });
       fetchData();
     } catch (err) {
       console.error('Failed to reset race:', err);
@@ -74,7 +75,7 @@ function Admin() {
   const handleDeleteRace = async (raceId) => {
     if (!confirm('Supprimer cette course ?')) return;
     try {
-      await fetch(`/api/admin/race/${raceId}`, { method: 'DELETE' });
+      await fetch(`${API_URL}/api/admin/race/${raceId}`, { method: 'DELETE' });
       fetchData();
     } catch (err) {
       console.error('Failed to delete race:', err);
@@ -574,8 +575,8 @@ function RaceModal({ race, onClose, onSave }) {
     setSaving(true);
     try {
       const url = race 
-        ? `/api/admin/race/${race.id}`
-        : '/api/admin/race/create';
+        ? `${API_URL}/api/admin/race/${race.id}`
+        : `${API_URL}/api/admin/race/create`;
       
       const method = race ? 'PUT' : 'POST';
       

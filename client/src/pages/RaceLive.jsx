@@ -4,6 +4,7 @@ import RaceMap from '../components/RaceMap';
 import RankingPanel from '../components/RankingPanel';
 import HeadingIndicator from '../components/HeadingIndicator';
 import WindAlert from '../components/WindAlert';
+import { API_URL } from '../config';
 
 // Helper functions
 function formatDuration(seconds) {
@@ -53,7 +54,7 @@ function BoostPanel({ raceId, boatId, playerId, boostEnergy, boostActive, boostT
     setClicking(true);
     
     try {
-      const res = await fetch(`/api/race/${raceId}/boost-click`, {
+      const res = await fetch(`${API_URL}/api/race/${raceId}/boost-click`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boatId })
@@ -80,7 +81,7 @@ function BoostPanel({ raceId, boatId, playerId, boostEnergy, boostActive, boostT
     if (!confirm('Acheter un boost pour 50 crédits ?')) return;
     
     try {
-      const res = await fetch(`/api/race/${raceId}/boost-buy`, {
+      const res = await fetch(`${API_URL}/api/race/${raceId}/boost-buy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boatId, playerId })
@@ -195,7 +196,7 @@ function RaceLive({ player, onPlayerUpdate }) {
 
   const fetchRaceData = async () => {
     try {
-      const res = await fetch(`/api/race/${raceId}/live?playerId=${player.id}`);
+      const res = await fetch(`${API_URL}/api/race/${raceId}/live?playerId=${player.id}`);
       if (res.ok) {
         const data = await res.json();
         setRaceData(data);
@@ -214,7 +215,7 @@ function RaceLive({ player, onPlayerUpdate }) {
   const handleSailChange = async (sailType) => {
     setSelectedSail(sailType);
     try {
-      await fetch(`/api/race/${raceId}/control`, {
+      await fetch(`${API_URL}/api/race/${raceId}/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -233,7 +234,7 @@ function RaceLive({ player, onPlayerUpdate }) {
   const handleForceFinish = async () => {
     if (!confirm('Terminer la course de force ? (debug)')) return;
     try {
-      await fetch(`/api/race/${raceId}/force-finish`, {
+      await fetch(`${API_URL}/api/race/${raceId}/force-finish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boatId: player.boat.id })
@@ -260,7 +261,7 @@ function RaceLive({ player, onPlayerUpdate }) {
 
   const fetchNextRaces = async () => {
     try {
-      const res = await fetch('/api/race/list?status=upcoming');
+      const res = await fetch(`${API_URL}/api/race/list?status=upcoming`);
       if (res.ok) {
         const races = await res.json();
         setNextRaces(races);
@@ -273,7 +274,7 @@ function RaceLive({ player, onPlayerUpdate }) {
   const handleRegisterNextRace = async (nextRaceId) => {
     setRegistering(true);
     try {
-      const res = await fetch(`/api/race/${nextRaceId}/register`, {
+      const res = await fetch(`${API_URL}/api/race/${nextRaceId}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boatId: player.boat.id })
