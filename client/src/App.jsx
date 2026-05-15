@@ -71,6 +71,11 @@ const res = await fetch(`${API_URL}/api/player/${playerId}`);
     setPlayer(null);
   };
 
+  const handleReconnect = (playerData) => {
+    localStorage.setItem('playerId', playerData.id);
+    setPlayer(playerData);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -80,7 +85,7 @@ const res = await fetch(`${API_URL}/api/player/${playerId}`);
   }
 
   if (!player) {
-    return <Welcome onCreatePlayer={handleCreatePlayer} />;
+    return <Welcome onCreatePlayer={handleCreatePlayer} onReconnect={handleReconnect} />;
   }
 
   return (

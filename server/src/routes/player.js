@@ -36,6 +36,51 @@ router.post('/create', (req, res) => {
   });
 });
 
+// Find player by name (for reconnection)
+router.post('/find-by-name', (req, res) => {
+  const db = req.app.locals.db;
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Name required' });
+  }
+
+  const playerResult = db.exec(`
+    SELECT id, name, credits, created_at FROM players WHERE name = ? COLLATE NOCASE
+  `, [name.trim()]);
+
+  if (!playerResult.length || !playerResult[0].values.length) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+
+  const [id, playerName, credits, created_at] = playerResult[0].values[0];
+
+  // Get player's boat
+  const boatResult = db.exec(`
+    SELECT id, name, speed_max, vmg_upwind, vmg_downwind, vmg_reaching, storm_resistance, weather_forecast
+    FROM boats WHERE player_id = ? AND is_bot = 0
+  `, [id]);
+
+  const boat = boatResult.length && boatResult[0].values.length ? {
+    id: boatResult[0].values[0][0],
+    name: boatResult[0].values[0][1],
+    speedMax: boatResult[0].values[0][2],
+    vmgUpwind: boatResult[0].values[0][3],
+    vmgDownwind: boatResult[0].values[0][4],
+    vmgReaching: boatResult[0].values[0][5],
+    stormResistance: boatResult[0].values[0][6],
+    weatherForecast: boatResult[0].values[0][7]
+  } : null;
+
+  res.json({
+    id,
+    name: playerName,
+    credits,
+    createdAt: created_at,
+    boat
+  });
+});
+
 // Get player info
 router.get('/:playerId', (req, res) => {
   const db = req.app.locals.db;

@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { API_URL } from '../config';
 
-function Welcome({ onCreatePlayer }) {
+function Welcome({ onCreatePlayer, onReconnect }) {
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mode, setMode] = useState('create'); // 'create' or 'reconnect'
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -15,9 +17,29 @@ function Welcome({ onCreatePlayer }) {
     setLoading(true);
     setError('');
 
-    const success = await onCreatePlayer(name.trim());
-    if (!success) {
-      setError('Erreur lors de la création du joueur');
+    if (mode === 'reconnect') {
+      // Try to find existing player
+      try {
+        const res = await fetch(`${API_URL}/api/player/find-by-name`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim() })
+        });
+        
+        if (res.ok) {
+          const player = await res.json();
+          onReconnect(player);
+        } else {
+          setError('Joueur non trouvé. Vérifiez le nom ou créez un nouveau compte.');
+        }
+      } catch (err) {
+        setError('Erreur de connexion');
+      }
+    } else {
+      const success = await onCreatePlayer(name.trim());
+      if (!success) {
+        setError('Erreur lors de la création du joueur');
+      }
     }
     setLoading(false);
   };
@@ -55,20 +77,48 @@ function Welcome({ onCreatePlayer }) {
           </ul>
         </div>
 
+        {/* Mode toggle */}
+        <div className="flex gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => { setMode('create'); setError(''); }}
+            className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
+              mode === 'create' 
+                ? 'bg-ocean-500 text-white' 
+                : 'bg-ocean-800 text-ocean-300 hover:bg-ocean-700'
+            }`}
+          >
+            🆕 Nouveau
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('reconnect'); setError(''); }}
+            className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
+              mode === 'reconnect' 
+                ? 'bg-ocean-500 text-white' 
+                : 'bg-ocean-800 text-ocean-300 hover:bg-ocean-700'
+            }`}
+          >
+            🔄 Reconnexion
+          </button>
+        </div>
+
         {/* Registration form */}
         <form onSubmit={handleSubmit} className="bg-ocean-900/50 backdrop-blur-sm rounded-xl p-6 border border-ocean-700">
-          <h2 className="text-xl font-semibold text-white mb-4">Créer votre profil</h2>
+          <h2 className="text-xl font-semibold text-white mb-4">
+            {mode === 'create' ? 'Créer votre profil' : 'Retrouver votre compte'}
+          </h2>
           
           <div className="mb-4">
             <label htmlFor="name" className="block text-ocean-200 mb-2">
-              Nom de skipper
+              {mode === 'create' ? 'Nom de skipper' : 'Votre nom de skipper'}
             </label>
             <input
               type="text"
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Capitaine..."
+              placeholder={mode === 'create' ? 'Capitaine...' : 'Entrez votre nom exact...'}
               className="w-full px-4 py-3 bg-ocean-800 border border-ocean-600 rounded-lg text-white placeholder-ocean-400 focus:outline-none focus:border-ocean-400 transition-colors"
               maxLength={20}
               disabled={loading}
@@ -84,12 +134,16 @@ function Welcome({ onCreatePlayer }) {
             disabled={loading}
             className="w-full py-3 bg-ocean-500 hover:bg-ocean-400 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Création...' : '🚀 Commencer l\'aventure'}
+            {loading 
+              ? (mode === 'create' ? 'Création...' : 'Recherche...') 
+              : (mode === 'create' ? '🚀 Commencer l\'aventure' : '🔄 Me reconnecter')}
           </button>
         </form>
 
         <p className="text-center text-ocean-500 text-sm mt-6">
-          Votre bateau vous attend au port !
+          {mode === 'create' 
+            ? 'Votre bateau vous attend au port !' 
+            : 'Entrez le même nom que lors de votre inscription'}
         </p>
       </div>
     </div>
