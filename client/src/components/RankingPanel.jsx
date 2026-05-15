@@ -6,6 +6,26 @@ function RankingPanel({ rankings, playerId }) {
     return position;
   };
 
+  // Find player's position and distance for gap calculation
+  const playerBoat = rankings.find(r => r.playerId === playerId);
+  
+  const getGapText = (boat) => {
+    if (!playerBoat || boat.playerId === playerId) return null;
+    
+    // Calculate gap based on total remaining distance
+    const gap = boat.totalRemaining - playerBoat.totalRemaining;
+    
+    if (Math.abs(gap) < 0.1) return null;
+    
+    if (gap > 0) {
+      // Player is ahead
+      return <span className="text-green-400">+{gap.toFixed(1)} nm</span>;
+    } else {
+      // Player is behind
+      return <span className="text-red-400">{gap.toFixed(1)} nm</span>;
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-ocean-700">
@@ -58,6 +78,13 @@ function RankingPanel({ rankings, playerId }) {
                     </div>
                   </div>
 
+                  {/* Gap indicator */}
+                  {getGapText(boat) && (
+                    <div className="text-xs font-medium">
+                      {getGapText(boat)}
+                    </div>
+                  )}
+                  
                   {/* Bot indicator */}
                   {boat.isBot && (
                     <div className="text-xs text-ocean-500 bg-ocean-800 px-2 py-1 rounded">
