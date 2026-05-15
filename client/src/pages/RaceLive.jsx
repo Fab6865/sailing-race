@@ -179,6 +179,7 @@ function RaceLive({ player, onPlayerUpdate }) {
   const [selectedSail, setSelectedSail] = useState('genois');
   const [nextRaces, setNextRaces] = useState([]);
   const [registering, setRegistering] = useState(false);
+  const [showMobileRanking, setShowMobileRanking] = useState(false);
   const pollInterval = useRef(null);
 
   useEffect(() => {
@@ -643,6 +644,38 @@ function RaceLive({ player, onPlayerUpdate }) {
           </div>
         )}
       </div>
+
+      {/* Mobile ranking button - visible only on small screens */}
+      <button
+        onClick={() => setShowMobileRanking(true)}
+        className="lg:hidden fixed bottom-20 left-4 z-40 bg-ocean-600 hover:bg-ocean-500 text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2"
+      >
+        <span>🏆</span>
+        <span className="font-medium">Classement</span>
+      </button>
+
+      {/* Mobile ranking modal */}
+      {showMobileRanking && (
+        <div className="lg:hidden fixed inset-0 z-50 bg-black/70 flex items-end">
+          <div className="w-full bg-ocean-900 rounded-t-2xl max-h-[70vh] flex flex-col">
+            <div className="p-4 border-b border-ocean-700 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>🏆</span>
+                <span>Classement</span>
+              </h3>
+              <button
+                onClick={() => setShowMobileRanking(false)}
+                className="text-ocean-400 hover:text-white text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <RankingPanel rankings={rankings} playerId={player.id} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
