@@ -351,31 +351,46 @@ function RaceMap({ waypoints, boats, playerBoat, wind }) {
           ctx.fill();
         }
 
-        // Boat hull (slightly larger triangle for player)
-        const size = isPlayer ? 13 : 9;
+        // Sailboat silhouette (top-down view)
+        const size = isPlayer ? 15 : 10;
+        const hullColor = isPlayer
+          ? (boatData.boostActive ? '#fbbf24' : '#22c55e')
+          : boatData.isBot ? '#6b7280' : '#3b82f6';
+        const strokeColor = (isPlayer || !boatData.isBot) ? 'white' : '#9ca3af';
+
+        // Hull – teardrop: bow at top (0,-size), stern at bottom
         ctx.beginPath();
         ctx.moveTo(0, -size);
-        ctx.lineTo(-size * 0.55, size * 0.7);
-        ctx.lineTo(0, size * 0.3);
-        ctx.lineTo(size * 0.55, size * 0.7);
+        ctx.bezierCurveTo( size * 0.5, -size * 0.1,  size * 0.38, size * 0.65, 0, size * 0.75);
+        ctx.bezierCurveTo(-size * 0.38, size * 0.65, -size * 0.5, -size * 0.1, 0, -size);
         ctx.closePath();
-
-        if (isPlayer) {
-          ctx.fillStyle = boatData.boostActive ? '#fbbf24' : '#22c55e';
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = 2;
-        } else if (boatData.isBot) {
-          ctx.fillStyle = '#6b7280';
-          ctx.strokeStyle = '#9ca3af';
-          ctx.lineWidth = 1;
-        } else {
-          ctx.fillStyle = '#3b82f6';
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = 1.5;
-        }
-
+        ctx.fillStyle = hullColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = isPlayer ? 1.5 : 1;
         ctx.fill();
         ctx.stroke();
+
+        // Mast – vertical line
+        ctx.beginPath();
+        ctx.moveTo(0, -size * 0.55);
+        ctx.lineTo(0, size * 0.25);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = isPlayer ? 1.5 : 1;
+        ctx.stroke();
+
+        // Mainsail – triangle (mast top → boom end → boom root)
+        ctx.beginPath();
+        ctx.moveTo(0, -size * 0.55);           // mast head
+        ctx.lineTo(size * 0.85, size * 0.25);  // clew (boom end)
+        ctx.lineTo(0, size * 0.1);             // tack (boom root)
+        ctx.closePath();
+        ctx.fillStyle = isPlayer
+          ? (boatData.boostActive ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.45)')
+          : boatData.isBot
+            ? 'rgba(255,255,255,0.18)'
+            : 'rgba(255,255,255,0.35)';
+        ctx.fill();
+
         ctx.restore();
 
         // Name label for player only
@@ -384,7 +399,7 @@ function RaceMap({ waypoints, boats, playerBoat, wind }) {
           ctx.font = 'bold 11px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
-          ctx.fillText(boatData.name, pos.x, pos.y + 16);
+          ctx.fillText(boatData.name, pos.x, pos.y + 18);
         }
       });
 
