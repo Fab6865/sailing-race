@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { API_URL } from '../config';
+import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 function Admin() {
   const [races, setRaces] = useState([]);
@@ -289,179 +292,109 @@ function Admin() {
   );
 }
 
-function WaypointMapEditor({ waypoints, setWaypoints, selectedWaypoint, setSelectedWaypoint, mapZoom }) {
-  const canvasRef = React.useRef(null);
-  const wrapRef = React.useRef(null);
-  // Canvas internal size tracks its actual displayed size → no scaling needed
-  const [size, setSize] = React.useState({ w: 560, h: 260 });
-  const [dragging, setDragging] = React.useState(null);
-  const [mapOffset, setMapOffset] = React.useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = React.useState(false);
-  const [panStart, setPanStart] = React.useState({ x: 0, y: 0 });
+function nmDistance(lat1, lon1, lat2, lon2) {
+  const R = 3440.065;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-  // Keep size in sync with container via ResizeObserver
-  React.useEffect(() => {
-    if (!wrapRef.current) return;
-    const ro = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) setSize({ w: Math.round(width), h: Math.round(height) });
-    });
-    ro.observe(wrapRef.current);
-    return () => ro.disconnect();
-  }, []);
-
-  const { w, h } = size;
-
-  const getBounds = () => {
-    if (waypoints.length === 0) return { minLat: 47, maxLat: 49, minLon: -5, maxLon: -2 };
-    let minLat = Math.min(...waypoints.map(p => p.lat));
-    let maxLat = Math.max(...waypoints.map(p => p.lat));
-    let minLon = Math.min(...waypoints.map(p => p.lon));
-    let maxLon = Math.max(...waypoints.map(p => p.lon));
-    const latPad = Math.max((maxLat - minLat) * 0.3, 0.5) / mapZoom;
-    const lonPad = Math.max((maxLon - minLon) * 0.3, 0.5) / mapZoom;
-    return { minLat: minLat - latPad, maxLat: maxLat + latPad, minLon: minLon - lonPad, maxLon: maxLon + lonPad };
-  };
-
-  // All coordinate math uses actual canvas pixel dimensions (= display dimensions)
-  const toCanvas = (lat, lon, bounds) => ({
-    x: ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * w + mapOffset.x,
-    y: h - ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * h + mapOffset.y,
+function makeMarkerIcon(index, total, selected) {
+  const isStart = index === 0;
+  const isEnd = index === total - 1;
+  const color = isStart ? '#22c55e' : isEnd ? '#ef4444' : '#f59e0b';
+  const s = selected ? 34 : 26;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${s}px;height:${s}px;border-radius:50%;background:${color};
+      color:white;display:flex;align-items:center;justify-content:center;
+      font-weight:bold;font-size:${selected ? 13 : 11}px;
+      border:${selected ? '3px solid white' : '2px solid rgba(255,255,255,0.8)'};
+      box-shadow:0 2px 8px rgba(0,0,0,0.5);cursor:pointer;">${index + 1}</div>`,
+    iconSize: [s, s],
+    iconAnchor: [s / 2, s / 2],
   });
+}
 
-  const toLatLon = (x, y, bounds) => ({
-    lon: ((x - mapOffset.x) / w) * (bounds.maxLon - bounds.minLon) + bounds.minLon,
-    lat: ((h - (y - mapOffset.y)) / h) * (bounds.maxLat - bounds.minLat) + bounds.minLat,
+function MapClickHandler({ waypointsLen, onAdd }) {
+  useMapEvents({
+    click: (e) => onAdd(e.latlng.lat, e.latlng.lng, waypointsLen),
   });
+  return null;
+}
 
-  // Exact mouse position relative to canvas (no scaling)
-  const getXY = e => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  };
+function WaypointMapEditor({ waypoints, setWaypoints, selectedWaypoint, setSelectedWaypoint }) {
+  const center = waypoints.length > 0
+    ? [waypoints.reduce((s, w) => s + w.lat, 0) / waypoints.length,
+       waypoints.reduce((s, w) => s + w.lon, 0) / waypoints.length]
+    : [48.0, -4.0];
 
-  const findWaypointAt = (x, y, bounds) => {
-    for (let i = waypoints.length - 1; i >= 0; i--) {
-      const pos = toCanvas(waypoints[i].lat, waypoints[i].lon, bounds);
-      if (Math.hypot(pos.x - x, pos.y - y) < 16) return i;
-    }
-    return -1;
-  };
+  const totalNm = waypoints.slice(1).reduce((sum, wp, i) =>
+    sum + nmDistance(waypoints[i].lat, waypoints[i].lon, wp.lat, wp.lon), 0);
 
-  // Redraw whenever state changes
-  React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || w === 0) return;
-    const ctx = canvas.getContext('2d');
-    const bounds = getBounds();
-
-    ctx.fillStyle = '#0c4a6e';
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.strokeStyle = 'rgba(14,165,233,0.2)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < w; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-    for (let y = 0; y < h; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-
-    if (waypoints.length > 1) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      waypoints.forEach((wp, i) => {
-        const p = toCanvas(wp.lat, wp.lon, bounds);
-        i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
-      });
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    waypoints.forEach((wp, i) => {
-      const p = toCanvas(wp.lat, wp.lon, bounds);
-      const sel = selectedWaypoint === i;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, sel ? 14 : 10, 0, Math.PI * 2);
-      ctx.fillStyle = i === 0 ? '#22c55e' : i === waypoints.length - 1 ? '#ef4444' : '#f59e0b';
-      ctx.fill();
-      if (sel) { ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.stroke(); }
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(i + 1, p.x, p.y);
-      ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.font = '10px sans-serif';
-      ctx.fillText(wp.name, p.x, p.y + 18);
+  const handleAdd = (lat, lng, len) => {
+    setWaypoints(wps => {
+      const n = [...wps];
+      n.splice(len - 1, 0, { lat, lon: lng, name: `Waypoint ${len}` });
+      return n;
     });
-
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('Clic = ajouter  |  Glisser = déplacer  |  Clic droit = supprimer', 10, h - 10);
-  }, [waypoints, selectedWaypoint, mapZoom, mapOffset, w, h]);
-
-  const handleMouseDown = e => {
-    const { x, y } = getXY(e);
-    if (e.button === 1 || e.shiftKey) {
-      setIsPanning(true);
-      setPanStart({ x: x - mapOffset.x, y: y - mapOffset.y });
-      return;
-    }
-    const idx = findWaypointAt(x, y, getBounds());
-    if (idx >= 0) { setSelectedWaypoint(idx); setDragging(idx); }
-  };
-
-  const handleMouseMove = e => {
-    const { x, y } = getXY(e);
-    if (isPanning) { setMapOffset({ x: x - panStart.x, y: y - panStart.y }); return; }
-    if (dragging !== null) {
-      const { lat, lon } = toLatLon(x, y, getBounds());
-      setWaypoints(wps => { const u = [...wps]; u[dragging] = { ...u[dragging], lat, lon }; return u; });
-    }
-  };
-
-  const handleMouseUp = e => {
-    if (isPanning) { setIsPanning(false); return; }
-    if (dragging !== null) { setDragging(null); return; }
-    if (e.button === 0) {
-      const { x, y } = getXY(e);
-      const bounds = getBounds();
-      if (findWaypointAt(x, y, bounds) < 0) {
-        const { lat, lon } = toLatLon(x, y, bounds);
-        setWaypoints(wps => {
-          const n = [...wps];
-          n.splice(wps.length - 1, 0, { lat, lon, name: `Waypoint ${wps.length}` });
-          return n;
-        });
-        setSelectedWaypoint(waypoints.length - 1);
-      }
-    }
-  };
-
-  const handleContextMenu = e => {
-    e.preventDefault();
-    const { x, y } = getXY(e);
-    const idx = findWaypointAt(x, y, getBounds());
-    if (idx >= 0 && waypoints.length > 2) {
-      setWaypoints(wps => wps.filter((_, i) => i !== idx));
-      setSelectedWaypoint(null);
-    }
+    setSelectedWaypoint(len - 1);
   };
 
   return (
-    <div ref={wrapRef} className="w-full rounded-lg border border-ocean-600 overflow-hidden" style={{ height: '260px' }}>
-      <canvas
-        ref={canvasRef}
-        width={w}
-        height={h}
-        className="cursor-crosshair"
-        style={{ display: 'block', width: '100%', height: '100%' }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={() => { setDragging(null); setIsPanning(false); }}
-        onContextMenu={handleContextMenu}
-      />
+    <div>
+      <div className="flex items-center justify-between mb-2 text-xs text-ocean-400">
+        <span>Clic carte = ajouter &nbsp;|&nbsp; Glisser = déplacer &nbsp;|&nbsp; Clic droit = supprimer</span>
+        <span className="text-white font-semibold">📏 {totalNm.toFixed(1)} nm</span>
+      </div>
+      <div style={{ height: '420px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #1e4d6b' }}>
+        <MapContainer center={center} zoom={7} style={{ height: '100%', width: '100%' }}>
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="© OpenStreetMap"
+          />
+          <MapClickHandler waypointsLen={waypoints.length} onAdd={handleAdd} />
+          {waypoints.length > 1 && (
+            <Polyline
+              positions={waypoints.map(w => [w.lat, w.lon])}
+              color="rgba(255,255,255,0.65)"
+              weight={2}
+              dashArray="7,6"
+            />
+          )}
+          {waypoints.map((wp, index) => (
+            <Marker
+              key={index}
+              position={[wp.lat, wp.lon]}
+              icon={makeMarkerIcon(index, waypoints.length, selectedWaypoint === index)}
+              draggable
+              eventHandlers={{
+                click: () => setSelectedWaypoint(index),
+                contextmenu: () => {
+                  if (waypoints.length > 2) {
+                    setWaypoints(wps => wps.filter((_, i) => i !== index));
+                    setSelectedWaypoint(null);
+                  }
+                },
+                dragend: (e) => {
+                  const { lat, lng } = e.target.getLatLng();
+                  setWaypoints(wps => {
+                    const u = [...wps];
+                    u[index] = { ...u[index], lat, lon: lng };
+                    return u;
+                  });
+                },
+              }}
+            >
+              <Tooltip permanent direction="top" offset={[0, -18]}>
+                <span style={{ fontWeight: 'bold', fontSize: '12px' }}>{wp.name}</span>
+              </Tooltip>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
     </div>
   );
 }
@@ -483,8 +416,6 @@ function RaceModal({ race, onClose, onSave }) {
   ]);
   const [saving, setSaving] = useState(false);
   const [selectedWaypoint, setSelectedWaypoint] = useState(null);
-  const [mapCenter, setMapCenter] = useState({ lat: 48.1, lon: -4.0 });
-  const [mapZoom, setMapZoom] = useState(1);
 
   const handleAddWaypoint = () => {
     const lastWp = waypoints[waypoints.length - 1];
@@ -545,7 +476,7 @@ function RaceModal({ race, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-ocean-900 rounded-xl border border-ocean-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-ocean-900 rounded-xl border border-ocean-700 w-full max-w-4xl max-h-[95vh] overflow-y-auto">
         <div className="p-6 border-b border-ocean-700">
           <h2 className="text-xl font-bold text-white">
             {race ? 'Modifier la course' : 'Nouvelle course'}
@@ -603,22 +534,8 @@ function RaceModal({ race, onClose, onSave }) {
 
           {/* Waypoints with Map Editor */}
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-2">
               <label className="text-ocean-300 text-sm">Waypoints ({waypoints.length})</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setMapZoom(z => Math.min(z + 0.5, 4))}
-                  className="text-sm px-2 py-1 bg-ocean-700 hover:bg-ocean-600 text-white rounded"
-                >
-                  🔍+
-                </button>
-                <button
-                  onClick={() => setMapZoom(z => Math.max(z - 0.5, 0.5))}
-                  className="text-sm px-2 py-1 bg-ocean-700 hover:bg-ocean-600 text-white rounded"
-                >
-                  🔍-
-                </button>
-              </div>
             </div>
             
             {/* Interactive Map */}
@@ -627,7 +544,6 @@ function RaceModal({ race, onClose, onSave }) {
               setWaypoints={setWaypoints}
               selectedWaypoint={selectedWaypoint}
               setSelectedWaypoint={setSelectedWaypoint}
-              mapZoom={mapZoom}
             />
 
             {/* Waypoint List */}
@@ -676,9 +592,6 @@ function RaceModal({ race, onClose, onSave }) {
               ))}
             </div>
             
-            <div className="mt-2 text-ocean-400 text-xs text-center">
-              💡 Clic sur la carte = ajouter un waypoint | Glisser un waypoint = le déplacer
-            </div>
           </div>
         </div>
 
