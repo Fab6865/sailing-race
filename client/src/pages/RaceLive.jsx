@@ -254,6 +254,20 @@ function RaceLive({ player, onPlayerUpdate }) {
     }
   };
 
+  // Apply suggested heading from autopilot
+  const handleAcceptSuggestion = async (heading) => {
+    try {
+      await fetch(`${API_URL}/api/race/${raceId}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boatId: player.boat.id, heading, sailType: selectedSail })
+      });
+      fetchRaceData();
+    } catch (err) {
+      console.error('Failed to apply heading suggestion:', err);
+    }
+  };
+
   // Force finish race (debug button)
   const handleForceFinish = async () => {
     if (!confirm('Terminer la course de force ? (debug)')) return;
@@ -654,6 +668,7 @@ function RaceLive({ player, onPlayerUpdate }) {
               targetWaypoint={targetWaypoint}
               boatPosition={{ lat: playerBoat.lat, lon: playerBoat.lon }}
               windDirection={wind.direction}
+              onAcceptSuggestion={handleAcceptSuggestion}
             />
           </div>
         )}

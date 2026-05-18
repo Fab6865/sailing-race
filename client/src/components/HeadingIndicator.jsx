@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 
-function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDirection }) {
+function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDirection, onAcceptSuggestion }) {
   const analysis = useMemo(() => {
     if (!targetWaypoint || !boatPosition) {
       return { quality: 'unknown', optimalHeading: 0, deviation: 0 };
@@ -81,6 +81,32 @@ function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDi
 
   const style = getQualityStyle();
 
+  // Suggestion autopilote avec timer 60s
+  const [dismissed, setDismissed] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+  const lastOptimalRef = useRef(null);
+
+  useEffect(() => {
+    if (analysis.deviation <= 30) { lastOptimalRef.current = null; return; }
+    const diff = lastOptimalRef.current === null
+      ? 999
+      : Math.abs(((analysis.optimalHeading - lastOptimalRef.current) + 180 + 360) % 360 - 180);
+    if (diff > 10) {
+      setDismissed(false);
+      setCountdown(60);
+      lastOptimalRef.current = analysis.optimalHeading;
+    }
+  }, [analysis.optimalHeading, analysis.deviation]);
+
+  useEffect(() => {
+    if (dismissed || analysis.deviation <= 30) return;
+    if (countdown <= 0) { setDismissed(true); return; }
+    const t = setInterval(() => setCountdown(c => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [dismissed, analysis.deviation, countdown]);
+
+  const showSuggestion = analysis.deviation > 30 && !analysis.inNoGoZone && !dismissed;
+
   return (
     <div className={`${style.bg} border ${style.border} rounded-lg p-3`}>
       <div className="flex items-center justify-between mb-2">
@@ -123,9 +149,41 @@ function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDi
         </div>
       )}
 
-      {analysis.deviation > 30 && !analysis.inNoGoZone && (
-        <div className="mt-2 text-ocean-300 text-xs">
-          Suggestion: Tournez vers {analysis.optimalHeading}° pour optimiser votre route
+      {showSuggestion && (
+        <div className="mt-3 bg-ocean-800/80 border border-yellow-500/40 rounded-lg p-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-yellow-300 text-xs font-medium">💡 Suggestion autopilote</span>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+              countdown > 20 ? 'bg-ocean-700 text-ocean-300'
+              : countdown > 10 ? 'bg-yellow-500/20 text-yellow-400'
+              : 'bg-red-500/20 text-red-400'
+            }`}>{countdown}s</span>
+          </div>
+          <div className="text-white text-sm mb-2">
+            Tournez vers <span className="text-green-400 font-bold">{analysis.optimalHeading}°</span>
+          </div>
+          <div className="h-1 bg-ocean-700 rounded-full mb-3">
+            <div
+              className={`h-full rounded-full transition-all duration-1000 ${
+                countdown > 20 ? 'bg-yellow-500' : countdown > 10 ? 'bg-orange-500' : 'bg-red-500'
+              }`}
+              style={{ width: `${(countdown / 60) * 100}%` }}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { onAcceptSuggestion?.(analysis.optimalHeading); setDismissed(true); }}
+              className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              ✓ Accepter
+            </button>
+            <button
+              onClick={() => setDismissed(true)}
+              className="flex-1 py-2 bg-ocean-700 hover:bg-ocean-600 text-ocean-300 rounded-lg text-sm transition-colors"
+            >
+              ✗ Ignorer
+            </button>
+          </div>
         </div>
       )}
     </div>
