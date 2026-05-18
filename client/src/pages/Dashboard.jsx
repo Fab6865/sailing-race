@@ -6,6 +6,8 @@ function Dashboard({ player }) {
   const [races, setRaces] = useState([]);
   const [currentRace, setCurrentRace] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
 
   useEffect(() => {
     fetchData();
@@ -53,22 +55,33 @@ function Dashboard({ player }) {
     }
   };
 
-  const handleClearRaces = async () => {
-    if (!confirm('Effacer toutes les courses terminées ?')) return;
-    
-    try {
-      const res = await fetch(`${API_URL}/api/admin/clear-finished-races`, {
-        method: 'POST'
-      });
-      
-      if (res.ok) {
-        fetchData();
-      } else {
-        alert('Erreur lors de la suppression');
-      }
-    } catch (err) {
-      console.error('Failed to clear races:', err);
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === races.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(races.map(r => r.id)));
     }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Supprimer ${selected.size} course(s) ? Cette action est irréversible.`)) return;
+
+    await Promise.all([...selected].map(id =>
+      fetch(`${API_URL}/api/admin/race/${id}`, { method: 'DELETE' })
+    ));
+
+    setSelected(new Set());
+    setDeleteMode(false);
+    fetchData();
   };
 
   const formatTime = (timestamp) => {
@@ -172,17 +185,48 @@ function Dashboard({ player }) {
 
       {/* Races list */}
       <div className="bg-ocean-900/50 rounded-xl border border-ocean-700 overflow-hidden">
-        <div className="p-4 border-b border-ocean-700 flex items-center justify-between">
+        <div className="p-4 border-b border-ocean-700 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <span>🏁</span>
             <span>Courses disponibles</span>
           </h2>
-          <button
-            onClick={handleClearRaces}
-            className="px-3 py-1 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-400 text-sm rounded-lg transition-colors"
-          >
-            🗑️ Effacer terminées
-          </button>
+          <div className="flex items-center gap-2">
+            {deleteMode && (
+              <>
+                <button
+                  onClick={toggleSelectAll}
+                  className="px-3 py-1 bg-ocean-700 hover:bg-ocean-600 text-ocean-200 text-sm rounded-lg transition-colors"
+                >
+                  {selected.size === races.length ? 'Tout désélect.' : 'Tout sélect.'}
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={selected.size === 0}
+                  className={`px-3 py-1 text-sm rounded-lg transition-colors border ${
+                    selected.size > 0
+                      ? 'bg-red-600/30 hover:bg-red-600/50 border-red-500/60 text-red-300'
+                      : 'bg-ocean-800 border-ocean-600 text-ocean-500 cursor-not-allowed'
+                  }`}
+                >
+                  🗑️ Supprimer ({selected.size})
+                </button>
+                <button
+                  onClick={() => { setDeleteMode(false); setSelected(new Set()); }}
+                  className="px-3 py-1 bg-ocean-800 hover:bg-ocean-700 text-ocean-300 text-sm rounded-lg transition-colors"
+                >
+                  Annuler
+                </button>
+              </>
+            )}
+            {!deleteMode && (
+              <button
+                onClick={() => setDeleteMode(true)}
+                className="px-3 py-1 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-400 text-sm rounded-lg transition-colors"
+              >
+                🗑️ Gérer les courses
+              </button>
+            )}
+          </div>
         </div>
 
         {races.length === 0 ? (
@@ -192,8 +236,22 @@ function Dashboard({ player }) {
         ) : (
           <div className="divide-y divide-ocean-700">
             {races.map(race => (
-              <div key={race.id} className="p-4 hover:bg-ocean-800/50 transition-colors">
+              <div
+                key={race.id}
+                className={`p-4 hover:bg-ocean-800/50 transition-colors ${deleteMode && selected.has(race.id) ? 'bg-red-900/20' : ''}`}
+                onClick={deleteMode ? () => toggleSelect(race.id) : undefined}
+                style={deleteMode ? { cursor: 'pointer' } : {}}
+              >
                 <div className="flex items-center justify-between">
+                  {deleteMode && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(race.id)}
+                      onChange={() => toggleSelect(race.id)}
+                      onClick={e => e.stopPropagation()}
+                      className="mr-3 w-4 h-4 accent-red-500 flex-shrink-0"
+                    />
+                  )}
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-lg font-semibold text-white">{race.name}</h3>
@@ -221,7 +279,7 @@ function Dashboard({ player }) {
                     </div>
                   </div>
 
-                  <div className="ml-4">
+                  {!deleteMode && <div className="ml-4">
                     {race.status === 'active' ? (
                       <Link
                         to={`/race/${race.id}`}
@@ -244,7 +302,7 @@ function Dashboard({ player }) {
                         Résultats
                       </Link>
                     )}
-                  </div>
+                  </div>}
                 </div>
               </div>
             ))}

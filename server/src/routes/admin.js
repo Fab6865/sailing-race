@@ -125,11 +125,6 @@ router.delete('/race/:raceId', (req, res) => {
     return res.status(404).json({ error: 'Race not found' });
   }
 
-  const status = raceResult[0].values[0][0];
-  if (status === 'active') {
-    return res.status(400).json({ error: 'Cannot delete active race' });
-  }
-
   // Delete participants first
   db.run(`DELETE FROM race_participants WHERE race_id = ?`, [raceId]);
   db.run(`DELETE FROM wind_state WHERE race_id = ?`, [raceId]);
