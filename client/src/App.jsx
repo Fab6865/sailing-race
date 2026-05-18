@@ -15,21 +15,21 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for saved player
     const savedPlayerId = localStorage.getItem('playerId');
     if (savedPlayerId) {
       fetchPlayer(savedPlayerId);
-      
-      // Refresh player data every 5 seconds to update credits
-      const interval = setInterval(() => {
-        fetchPlayer(savedPlayerId);
-      }, 5000);
-      
-      return () => clearInterval(interval);
     } else {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!player) return;
+    const interval = setInterval(() => {
+      fetchPlayer(player.id);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [player?.id]);
 
   const fetchPlayer = async (playerId) => {
     try {
@@ -39,6 +39,7 @@ const res = await fetch(`${API_URL}/api/player/${playerId}`);
         setPlayer(data);
       } else {
         localStorage.removeItem('playerId');
+        setPlayer(null);
       }
     } catch (err) {
       console.error('Failed to fetch player:', err);
