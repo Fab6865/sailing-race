@@ -22,6 +22,9 @@ let lastWindUpdate = Date.now();
 let currentTickInterval = null;
 let currentApp = null;
 
+// In-memory previous speeds for inertia smoothing (participantId -> knots)
+const prevSpeeds = new Map();
+
 export function startSimulation(db, app) {
   console.log('🎮 Starting simulation engine...');
   currentApp = app;
@@ -181,8 +184,10 @@ function simulationTick(db) {
         `, [boat.heading, participantId]);
       }
 
-      // Move boat
-      const newPosition = moveBoat(boat, wind, BASE_TICK_INTERVAL / 1000);
+      // Move boat (with inertia: pass previous speed so acceleration is gradual)
+      const previousSpeed = prevSpeeds.get(participantId) || null;
+      const newPosition = moveBoat(boat, wind, BASE_TICK_INTERVAL / 1000, previousSpeed);
+      prevSpeeds.set(participantId, newPosition.speed);
 
       // Update position
       db.run(`

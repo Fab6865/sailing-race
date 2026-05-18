@@ -1,128 +1,147 @@
 import { useState, useEffect, useRef } from 'react';
 
-function WindAlert({ wind, onDismiss }) {
+function WindAlert({ wind }) {
   const [visible, setVisible] = useState(false);
   const [change, setChange] = useState(null);
+  const [shake, setShake] = useState(false);
   const previousWind = useRef(null);
+  const dismissTimer = useRef(null);
 
   useEffect(() => {
     if (!wind) return;
 
-    // Check for significant wind change
     if (previousWind.current) {
-      const dirChange = wind.direction - previousWind.current.direction;
-      const speedChange = wind.speed - previousWind.current.speed;
+      let dirDelta = wind.direction - previousWind.current.direction;
+      if (dirDelta > 180) dirDelta -= 360;
+      if (dirDelta < -180) dirDelta += 360;
 
-      // Normalize direction change
-      let normalizedDirChange = dirChange;
-      if (normalizedDirChange > 180) normalizedDirChange -= 360;
-      if (normalizedDirChange < -180) normalizedDirChange += 360;
+      const speedDelta = wind.speed - previousWind.current.speed;
 
-      // Show alert if significant change
-      if (Math.abs(normalizedDirChange) > 10 || Math.abs(speedChange) > 3) {
+      if (Math.abs(dirDelta) > 10 || Math.abs(speedDelta) > 3) {
         setChange({
-          direction: {
-            from: previousWind.current.direction,
-            to: wind.direction,
-            delta: normalizedDirChange
-          },
-          speed: {
-            from: previousWind.current.speed,
-            to: wind.speed,
-            delta: speedChange
-          }
+          direction: { from: previousWind.current.direction, to: wind.direction, delta: dirDelta },
+          speed: { from: previousWind.current.speed, to: wind.speed, delta: speedDelta }
         });
         setVisible(true);
+        setShake(true);
+        setTimeout(() => setShake(false), 600);
 
-        // Auto-dismiss after 10 seconds
-        const timer = setTimeout(() => {
-          setVisible(false);
-        }, 10000);
-
-        return () => clearTimeout(timer);
+        clearTimeout(dismissTimer.current);
+        dismissTimer.current = setTimeout(() => setVisible(false), 15000);
       }
     }
 
     previousWind.current = { ...wind };
   }, [wind?.direction, wind?.speed]);
 
-  const handleDismiss = () => {
-    setVisible(false);
-    if (onDismiss) onDismiss();
-  };
-
-  const getSailSuggestion = () => {
-    if (!wind) return null;
-
-    // Suggestion based on wind speed and general conditions
-    if (wind.speed > 25) {
-      return { sail: 'grandvoile', icon: '🔺', reason: 'Vent fort - utilisez la grand-voile' };
-    }
-    if (wind.speed < 8) {
-      return { sail: 'spi', icon: '🪂', reason: 'Vent faible - utilisez le spi si possible' };
-    }
-    return { sail: 'genois', icon: '⛵', reason: 'Vérifiez votre voile selon le nouvel angle' };
-  };
-
-  const sailSuggestion = getSailSuggestion();
+  useEffect(() => () => clearTimeout(dismissTimer.current), []);
 
   if (!visible || !change) return null;
 
+  const isStrong = wind?.speed > 25;
+  const isBigShift = Math.abs(change.direction.delta) > 25;
+
+  const getSailSuggestion = () => {
+    if (!wind) return null;
+    if (wind.speed > 25) return { icon: '🔺', text: 'Vent fort — passez en grand-voile !' };
+    if (wind.speed < 8) return { icon: '🪂', text: 'Vent faible — essayez le spi' };
+    return { icon: '⛵', text: 'Vérifiez votre voile selon le nouvel angle' };
+  };
+
+  const suggestion = getSailSuggestion();
+
   return (
-    <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-pulse">
-      <div className="bg-ocean-900/95 backdrop-blur-sm border border-yellow-500 rounded-xl p-4 shadow-lg max-w-md">
-        <div className="flex items-start gap-3">
-          <div className="text-3xl animate-bounce">🌬️</div>
+    <div
+      className={`fixed top-20 left-1/2 z-50 -translate-x-1/2 w-[min(420px,90vw)]
+        ${shake ? 'animate-[wiggle_0.1s_ease-in-out_6]' : ''}
+      `}
+      style={shake ? { animation: 'wiggle 0.08s ease-in-out 6' } : {}}
+    >
+      {/* Keyframe injected inline */}
+      <style>{`
+        @keyframes wiggle {
+          0%,100% { transform: translateX(-50%) rotate(0deg); }
+          25% { transform: translateX(calc(-50% - 6px)) rotate(-1.5deg); }
+          75% { transform: translateX(calc(-50% + 6px)) rotate(1.5deg); }
+        }
+      `}</style>
+
+      <div className={`rounded-2xl border shadow-2xl overflow-hidden
+        ${isStrong
+          ? 'bg-red-950/95 border-red-500 shadow-red-500/30'
+          : 'bg-ocean-950/95 border-yellow-500 shadow-yellow-500/20'
+        } backdrop-blur-md`}
+      >
+        {/* Header band */}
+        <div className={`px-4 py-3 flex items-center gap-3 ${
+          isStrong ? 'bg-red-500/20' : 'bg-yellow-500/15'
+        }`}>
+          <span className="text-3xl">
+            {isStrong ? '⛈️' : isBigShift ? '🌬️' : '💨'}
+          </span>
           <div className="flex-1">
-            <h3 className="text-yellow-400 font-bold mb-2">Changement de vent !</h3>
-            
-            <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-              {/* Direction change */}
-              <div>
-                <div className="text-ocean-400 text-xs mb-1">Direction</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-ocean-300">{change.direction.from}°</span>
-                  <span className="text-yellow-400">→</span>
-                  <span className="text-white font-bold">{change.direction.to}°</span>
-                  <span className={`text-xs ${change.direction.delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    ({change.direction.delta > 0 ? '+' : ''}{Math.round(change.direction.delta)}°)
-                  </span>
-                </div>
-              </div>
-
-              {/* Speed change */}
-              <div>
-                <div className="text-ocean-400 text-xs mb-1">Force</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-ocean-300">{change.speed.from.toFixed(1)}</span>
-                  <span className="text-yellow-400">→</span>
-                  <span className="text-white font-bold">{change.speed.to.toFixed(1)} kn</span>
-                  <span className={`text-xs ${change.speed.delta > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                    ({change.speed.delta > 0 ? '+' : ''}{change.speed.delta.toFixed(1)})
-                  </span>
-                </div>
-              </div>
+            <div className={`font-bold text-base ${isStrong ? 'text-red-300' : 'text-yellow-300'}`}>
+              {isStrong ? 'TEMPÊTE !' : 'Changement de vent !'}
             </div>
+            <div className="text-ocean-400 text-xs">Ajustez votre cap et vos voiles</div>
+          </div>
+          <button
+            onClick={() => setVisible(false)}
+            className="text-ocean-500 hover:text-white text-xl leading-none p-1"
+          >✕</button>
+        </div>
 
-            {sailSuggestion && (
-              <div className="bg-yellow-500/10 rounded-lg px-3 py-2 text-sm mb-3">
-                <span className="text-yellow-400">💡 Suggestion:</span>
-                <span className="text-white ml-1">{sailSuggestion.reason}</span>
-              </div>
-            )}
-
-            <div className="text-ocean-400 text-xs">
-              Ajustez votre cap et vos voiles en conséquence !
+        {/* Wind values */}
+        <div className="px-4 py-3 grid grid-cols-2 gap-4">
+          <div className="bg-ocean-800/50 rounded-xl p-3 text-center">
+            <div className="text-ocean-400 text-xs mb-1">Direction</div>
+            <div className="flex items-center justify-center gap-2 text-sm">
+              <span className="text-ocean-300">{change.direction.from}°</span>
+              <span className="text-yellow-400 font-bold">→</span>
+              <span className="text-white font-bold text-base">{change.direction.to}°</span>
+            </div>
+            <div className={`text-xs mt-1 font-medium ${
+              change.direction.delta > 0 ? 'text-blue-400' : 'text-orange-400'
+            }`}>
+              {change.direction.delta > 0 ? '▶ ' : '◀ '}
+              {Math.abs(Math.round(change.direction.delta))}° {change.direction.delta > 0 ? 'tribord' : 'bâbord'}
             </div>
           </div>
 
-          <button
-            onClick={handleDismiss}
-            className="text-ocean-400 hover:text-white transition-colors"
-          >
-            ✕
-          </button>
+          <div className="bg-ocean-800/50 rounded-xl p-3 text-center">
+            <div className="text-ocean-400 text-xs mb-1">Force</div>
+            <div className="flex items-center justify-center gap-2 text-sm">
+              <span className="text-ocean-300">{change.speed.from.toFixed(1)}</span>
+              <span className="text-yellow-400 font-bold">→</span>
+              <span className={`font-bold text-base ${isStrong ? 'text-red-300' : 'text-white'}`}>
+                {change.speed.to.toFixed(1)} kn
+              </span>
+            </div>
+            <div className={`text-xs mt-1 font-medium ${
+              change.speed.delta > 0 ? 'text-red-400' : 'text-green-400'
+            }`}>
+              {change.speed.delta > 0 ? '↑ +' : '↓ '}
+              {Math.abs(change.speed.delta).toFixed(1)} kn
+            </div>
+          </div>
         </div>
+
+        {/* Suggestion */}
+        {suggestion && (
+          <div className={`mx-4 mb-3 px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
+            isStrong ? 'bg-red-500/15 text-red-300' : 'bg-yellow-500/10 text-yellow-300'
+          }`}>
+            <span>{suggestion.icon}</span>
+            <span>{suggestion.text}</span>
+          </div>
+        )}
+
+        {/* Beaufort */}
+        {wind?.beaufort && (
+          <div className="px-4 pb-3 text-xs text-ocean-400 text-center">
+            Beaufort {wind.beaufort.force} — {wind.beaufort.description}
+          </div>
+        )}
       </div>
     </div>
   );

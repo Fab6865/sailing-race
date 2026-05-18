@@ -291,238 +291,178 @@ function Admin() {
 
 function WaypointMapEditor({ waypoints, setWaypoints, selectedWaypoint, setSelectedWaypoint, mapZoom }) {
   const canvasRef = React.useRef(null);
+  const wrapRef = React.useRef(null);
+  // Canvas internal size tracks its actual displayed size → no scaling needed
+  const [size, setSize] = React.useState({ w: 560, h: 260 });
   const [dragging, setDragging] = React.useState(null);
   const [mapOffset, setMapOffset] = React.useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = React.useState(false);
   const [panStart, setPanStart] = React.useState({ x: 0, y: 0 });
 
-  const width = 600;
-  const height = 300;
+  // Keep size in sync with container via ResizeObserver
+  React.useEffect(() => {
+    if (!wrapRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) setSize({ w: Math.round(width), h: Math.round(height) });
+    });
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, []);
 
-  // Calculate bounds from waypoints
+  const { w, h } = size;
+
   const getBounds = () => {
-    if (waypoints.length === 0) {
-      return { minLat: 47, maxLat: 49, minLon: -5, maxLon: -2 };
-    }
-    let minLat = Math.min(...waypoints.map(w => w.lat));
-    let maxLat = Math.max(...waypoints.map(w => w.lat));
-    let minLon = Math.min(...waypoints.map(w => w.lon));
-    let maxLon = Math.max(...waypoints.map(w => w.lon));
-    
-    // Add padding
+    if (waypoints.length === 0) return { minLat: 47, maxLat: 49, minLon: -5, maxLon: -2 };
+    let minLat = Math.min(...waypoints.map(p => p.lat));
+    let maxLat = Math.max(...waypoints.map(p => p.lat));
+    let minLon = Math.min(...waypoints.map(p => p.lon));
+    let maxLon = Math.max(...waypoints.map(p => p.lon));
     const latPad = Math.max((maxLat - minLat) * 0.3, 0.5) / mapZoom;
     const lonPad = Math.max((maxLon - minLon) * 0.3, 0.5) / mapZoom;
-    
-    return {
-      minLat: minLat - latPad,
-      maxLat: maxLat + latPad,
-      minLon: minLon - lonPad,
-      maxLon: maxLon + lonPad
-    };
+    return { minLat: minLat - latPad, maxLat: maxLat + latPad, minLon: minLon - lonPad, maxLon: maxLon + lonPad };
   };
 
-  const toCanvas = (lat, lon, bounds) => {
-    const x = ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * width + mapOffset.x;
-    const y = height - ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * height + mapOffset.y;
-    return { x, y };
+  // All coordinate math uses actual canvas pixel dimensions (= display dimensions)
+  const toCanvas = (lat, lon, bounds) => ({
+    x: ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * w + mapOffset.x,
+    y: h - ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * h + mapOffset.y,
+  });
+
+  const toLatLon = (x, y, bounds) => ({
+    lon: ((x - mapOffset.x) / w) * (bounds.maxLon - bounds.minLon) + bounds.minLon,
+    lat: ((h - (y - mapOffset.y)) / h) * (bounds.maxLat - bounds.minLat) + bounds.minLat,
+  });
+
+  // Exact mouse position relative to canvas (no scaling)
+  const getXY = e => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  const toLatLon = (x, y, bounds) => {
-    const lon = ((x - mapOffset.x) / width) * (bounds.maxLon - bounds.minLon) + bounds.minLon;
-    const lat = ((height - (y - mapOffset.y)) / height) * (bounds.maxLat - bounds.minLat) + bounds.minLat;
-    return { lat, lon };
+  const findWaypointAt = (x, y, bounds) => {
+    for (let i = waypoints.length - 1; i >= 0; i--) {
+      const pos = toCanvas(waypoints[i].lat, waypoints[i].lon, bounds);
+      if (Math.hypot(pos.x - x, pos.y - y) < 16) return i;
+    }
+    return -1;
   };
 
-  // Draw map
+  // Redraw whenever state changes
   React.useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || w === 0) return;
     const ctx = canvas.getContext('2d');
     const bounds = getBounds();
 
-    // Background
     ctx.fillStyle = '#0c4a6e';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, w, h);
 
-    // Grid
-    ctx.strokeStyle = 'rgba(14, 165, 233, 0.2)';
+    ctx.strokeStyle = 'rgba(14,165,233,0.2)';
     ctx.lineWidth = 1;
-    for (let i = 0; i < width; i += 50) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i, height);
-      ctx.stroke();
-    }
-    for (let i = 0; i < height; i += 50) {
-      ctx.beginPath();
-      ctx.moveTo(0, i);
-      ctx.lineTo(width, i);
-      ctx.stroke();
-    }
+    for (let x = 0; x < w; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y < h; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
 
-    // Draw route line
     if (waypoints.length > 1) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
       ctx.beginPath();
       waypoints.forEach((wp, i) => {
-        const pos = toCanvas(wp.lat, wp.lon, bounds);
-        if (i === 0) ctx.moveTo(pos.x, pos.y);
-        else ctx.lineTo(pos.x, pos.y);
+        const p = toCanvas(wp.lat, wp.lon, bounds);
+        i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    // Draw waypoints
     waypoints.forEach((wp, i) => {
-      const pos = toCanvas(wp.lat, wp.lon, bounds);
-      const isSelected = selectedWaypoint === i;
-      const radius = isSelected ? 14 : 10;
-
-      // Circle
+      const p = toCanvas(wp.lat, wp.lon, bounds);
+      const sel = selectedWaypoint === i;
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, sel ? 14 : 10, 0, Math.PI * 2);
       ctx.fillStyle = i === 0 ? '#22c55e' : i === waypoints.length - 1 ? '#ef4444' : '#f59e0b';
       ctx.fill();
-      if (isSelected) {
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
-
-      // Number
+      if (sel) { ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.stroke(); }
       ctx.fillStyle = 'white';
       ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(i + 1, pos.x, pos.y);
-
-      // Name
+      ctx.fillText(i + 1, p.x, p.y);
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
       ctx.font = '10px sans-serif';
-      ctx.fillText(wp.name, pos.x, pos.y + 18);
+      ctx.fillText(wp.name, p.x, p.y + 18);
     });
 
-    // Instructions
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('Clic = ajouter | Glisser = déplacer | Clic droit = supprimer', 10, height - 10);
+    ctx.fillText('Clic = ajouter  |  Glisser = déplacer  |  Clic droit = supprimer', 10, h - 10);
+  }, [waypoints, selectedWaypoint, mapZoom, mapOffset, w, h]);
 
-  }, [waypoints, selectedWaypoint, mapZoom, mapOffset]);
-
-  const findWaypointAt = (x, y, bounds) => {
-    for (let i = waypoints.length - 1; i >= 0; i--) {
-      const pos = toCanvas(waypoints[i].lat, waypoints[i].lon, bounds);
-      const dist = Math.sqrt((pos.x - x) ** 2 + (pos.y - y) ** 2);
-      if (dist < 15) return i;
-    }
-    return -1;
-  };
-
-  const handleMouseDown = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const bounds = getBounds();
-
-    // Middle click or shift+click = pan
+  const handleMouseDown = e => {
+    const { x, y } = getXY(e);
     if (e.button === 1 || e.shiftKey) {
       setIsPanning(true);
-      setPanStart({ x: e.clientX - mapOffset.x, y: e.clientY - mapOffset.y });
+      setPanStart({ x: x - mapOffset.x, y: y - mapOffset.y });
       return;
     }
+    const idx = findWaypointAt(x, y, getBounds());
+    if (idx >= 0) { setSelectedWaypoint(idx); setDragging(idx); }
+  };
 
-    const wpIndex = findWaypointAt(x, y, bounds);
-    
-    if (wpIndex >= 0) {
-      setSelectedWaypoint(wpIndex);
-      setDragging(wpIndex);
+  const handleMouseMove = e => {
+    const { x, y } = getXY(e);
+    if (isPanning) { setMapOffset({ x: x - panStart.x, y: y - panStart.y }); return; }
+    if (dragging !== null) {
+      const { lat, lon } = toLatLon(x, y, getBounds());
+      setWaypoints(wps => { const u = [...wps]; u[dragging] = { ...u[dragging], lat, lon }; return u; });
     }
   };
 
-  const handleMouseMove = (e) => {
-    if (isPanning) {
-      setMapOffset({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y
-      });
-      return;
-    }
-
-    if (dragging !== null) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const bounds = getBounds();
-      const { lat, lon } = toLatLon(x, y, bounds);
-
-      const updated = [...waypoints];
-      updated[dragging] = { ...updated[dragging], lat, lon };
-      setWaypoints(updated);
-    }
-  };
-
-  const handleMouseUp = (e) => {
-    if (isPanning) {
-      setIsPanning(false);
-      return;
-    }
-
-    if (dragging !== null) {
-      setDragging(null);
-      return;
-    }
-
-    // Left click on empty space = add waypoint BEFORE the last one (arrival)
+  const handleMouseUp = e => {
+    if (isPanning) { setIsPanning(false); return; }
+    if (dragging !== null) { setDragging(null); return; }
     if (e.button === 0) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const { x, y } = getXY(e);
       const bounds = getBounds();
-
-      const wpIndex = findWaypointAt(x, y, bounds);
-      if (wpIndex < 0) {
+      if (findWaypointAt(x, y, bounds) < 0) {
         const { lat, lon } = toLatLon(x, y, bounds);
-        const newWp = { lat, lon, name: `Waypoint ${waypoints.length}` };
-        // Insert before the last waypoint (arrival stays at the end)
-        const newWaypoints = [...waypoints];
-        newWaypoints.splice(waypoints.length - 1, 0, newWp);
-        setWaypoints(newWaypoints);
+        setWaypoints(wps => {
+          const n = [...wps];
+          n.splice(wps.length - 1, 0, { lat, lon, name: `Waypoint ${wps.length}` });
+          return n;
+        });
         setSelectedWaypoint(waypoints.length - 1);
       }
     }
   };
 
-  const handleContextMenu = (e) => {
+  const handleContextMenu = e => {
     e.preventDefault();
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const bounds = getBounds();
-
-    const wpIndex = findWaypointAt(x, y, bounds);
-    if (wpIndex >= 0 && waypoints.length > 2) {
-      setWaypoints(waypoints.filter((_, i) => i !== wpIndex));
+    const { x, y } = getXY(e);
+    const idx = findWaypointAt(x, y, getBounds());
+    if (idx >= 0 && waypoints.length > 2) {
+      setWaypoints(wps => wps.filter((_, i) => i !== idx));
       setSelectedWaypoint(null);
     }
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className="w-full rounded-lg cursor-crosshair border border-ocean-600"
-      style={{ height: '250px' }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={() => { setDragging(null); setIsPanning(false); }}
-      onContextMenu={handleContextMenu}
-    />
+    <div ref={wrapRef} className="w-full rounded-lg border border-ocean-600 overflow-hidden" style={{ height: '260px' }}>
+      <canvas
+        ref={canvasRef}
+        width={w}
+        height={h}
+        className="cursor-crosshair"
+        style={{ display: 'block', width: '100%', height: '100%' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => { setDragging(null); setIsPanning(false); }}
+        onContextMenu={handleContextMenu}
+      />
+    </div>
   );
 }
 

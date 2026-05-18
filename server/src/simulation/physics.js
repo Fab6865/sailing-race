@@ -87,11 +87,18 @@ export function calculateBoatSpeed(boat, wind) {
 
 /**
  * Move boat based on heading and speed
- * Returns new position {lat, lon}
+ * Returns new position {lat, lon, speed}
+ * previousSpeed: optional — when provided, applies gentle inertia so speed
+ * changes are gradual rather than instantaneous (boat momentum).
  */
-export function moveBoat(boat, wind, deltaSeconds) {
-  const speed = calculateBoatSpeed(boat, wind);
-  
+export function moveBoat(boat, wind, deltaSeconds, previousSpeed = null) {
+  const targetSpeed = calculateBoatSpeed(boat, wind);
+
+  // Inertia: blend toward target speed (factor ~0.55 per 60s tick feels natural)
+  const speed = previousSpeed !== null
+    ? previousSpeed + (targetSpeed - previousSpeed) * 0.55
+    : targetSpeed;
+
   // Distance traveled in nautical miles
   const distanceNM = (speed * deltaSeconds) / 3600;
 

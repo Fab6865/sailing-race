@@ -20,10 +20,10 @@ function App() {
     if (savedPlayerId) {
       fetchPlayer(savedPlayerId);
       
-      // Refresh player data every 10 seconds to update credits
+      // Refresh player data every 5 seconds to update credits
       const interval = setInterval(() => {
         fetchPlayer(savedPlayerId);
-      }, 10000);
+      }, 5000);
       
       return () => clearInterval(interval);
     } else {

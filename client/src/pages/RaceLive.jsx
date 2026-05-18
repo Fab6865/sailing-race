@@ -4,6 +4,9 @@ import RaceMap from '../components/RaceMap';
 import RankingPanel from '../components/RankingPanel';
 import HeadingIndicator from '../components/HeadingIndicator';
 import WindAlert from '../components/WindAlert';
+import SpeedGauge from '../components/SpeedGauge';
+import WindForecast from '../components/WindForecast';
+import { useSoundSystem } from '../hooks/useSoundSystem';
 import { API_URL } from '../config';
 
 // Helper functions
@@ -180,18 +183,38 @@ function RaceLive({ player, onPlayerUpdate }) {
   const [nextRaces, setNextRaces] = useState([]);
   const [registering, setRegistering] = useState(false);
   const [showMobileRanking, setShowMobileRanking] = useState(false);
+  const [showBoostDrawer, setShowBoostDrawer] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const pollInterval = useRef(null);
+
+  // Sound system — initialised on first user interaction to satisfy browser autoplay policy
+  const prevWaypointRef = useRef(null);
+  const prevSailRef = useRef(null);
+  const prevBoostRef = useRef(false);
+  const prevWindChangeRef = useRef(null);
+  const windSpeed = raceData?.wind?.speed ?? 15;
+  const { init: initSound, playSailFlap, playWaypointReached, playBoostActivate, playWindShift } =
+    useSoundSystem(windSpeed, soundEnabled);
 
   useEffect(() => {
     fetchRaceData();
-    
+
     // Poll every 10 seconds
     pollInterval.current = setInterval(fetchRaceData, 10000);
-    
+
+    // Init audio on first user interaction (browser autoplay policy)
+    const onFirstInteraction = () => {
+      initSound();
+      window.removeEventListener('click', onFirstInteraction);
+      window.removeEventListener('keydown', onFirstInteraction);
+    };
+    window.addEventListener('click', onFirstInteraction);
+    window.addEventListener('keydown', onFirstInteraction);
+
     return () => {
-      if (pollInterval.current) {
-        clearInterval(pollInterval.current);
-      }
+      if (pollInterval.current) clearInterval(pollInterval.current);
+      window.removeEventListener('click', onFirstInteraction);
+      window.removeEventListener('keydown', onFirstInteraction);
     };
   }, [raceId, player.id]);
 
@@ -253,10 +276,46 @@ function RaceLive({ player, onPlayerUpdate }) {
     }
   }, [raceData?.playerBoat?.sailType]);
 
-  // Fetch next available races when player finishes
+  // Sound triggers on game events
+  useEffect(() => {
+    if (!raceData?.playerBoat) return;
+    const pb = raceData.playerBoat;
+
+    // Waypoint reached
+    if (prevWaypointRef.current !== null && pb.currentWaypoint > prevWaypointRef.current) {
+      playWaypointReached();
+    }
+    prevWaypointRef.current = pb.currentWaypoint;
+
+    // Sail change
+    if (prevSailRef.current !== null && pb.sailType !== prevSailRef.current) {
+      playSailFlap();
+    }
+    prevSailRef.current = pb.sailType;
+
+    // Boost activated
+    if (!prevBoostRef.current && pb.boostActive) {
+      playBoostActivate();
+    }
+    prevBoostRef.current = pb.boostActive;
+  }, [raceData?.playerBoat?.currentWaypoint, raceData?.playerBoat?.sailType, raceData?.playerBoat?.boostActive]);
+
+  // Wind shift sound
+  useEffect(() => {
+    if (!raceData?.windChange) return;
+    const wc = raceData.windChange;
+    if (prevWindChangeRef.current !== wc.timestamp &&
+        (Math.abs(wc.directionChange) > 10 || Math.abs(wc.speedChange) > 2)) {
+      playWindShift();
+    }
+    prevWindChangeRef.current = wc.timestamp;
+  }, [raceData?.windChange]);
+
+  // Fetch next available races when player finishes + refresh credits immediately
   useEffect(() => {
     if (raceData?.playerBoat?.finished) {
       fetchNextRaces();
+      onPlayerUpdate(); // sync credits earned from the race right away
     }
   }, [raceData?.playerBoat?.finished]);
 
@@ -467,33 +526,19 @@ function RaceLive({ player, onPlayerUpdate }) {
           wind={wind}
         />
 
-        {/* Player boat info with Speedometer */}
+        {/* Player boat info with SpeedGauge */}
         {playerBoat && (
-          <div className="absolute bottom-4 left-4 bg-ocean-900/90 backdrop-blur-sm rounded-lg px-4 py-3 border border-ocean-700">
+          <div className="absolute bottom-4 left-4 bg-ocean-900/90 backdrop-blur-sm rounded-lg px-4 py-2 border border-ocean-700">
             <div className="flex items-center gap-4">
-              {/* Speedometer */}
-              <div className="flex items-center gap-2 pr-3 border-r border-ocean-600">
-                <div className={`text-3xl font-bold ${
-                  playerBoat.boostActive ? 'text-yellow-400' : 
-                  playerBoat.speed >= 6 ? 'text-green-400' : 
-                  playerBoat.speed >= 4 ? 'text-white' : 'text-red-400'
-                }`}>
-                  {playerBoat.speed || 0}
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-ocean-400 text-xs">kn</span>
-                  <span className={`text-xs ${
-                    playerBoat.speed >= (playerBoat.maxSpeed * 0.8) ? 'text-green-400' : 
-                    playerBoat.speed >= (playerBoat.maxSpeed * 0.5) ? 'text-yellow-400' : 'text-red-400'
-                  }`}>
-                    /{playerBoat.maxSpeed}
-                  </span>
-                </div>
-                {playerBoat.boostActive && (
-                  <span className="text-yellow-400 text-lg animate-pulse">⚡</span>
-                )}
+              {/* Animated speed gauge */}
+              <div className="pr-3 border-r border-ocean-600">
+                <SpeedGauge
+                  speed={playerBoat.speed || 0}
+                  maxSpeed={playerBoat.maxSpeed || 8}
+                  boostActive={playerBoat.boostActive}
+                />
               </div>
-              
+
               <div>
                 <div className="text-ocean-400 text-xs">Position</div>
                 <div className="text-white font-bold">
@@ -601,20 +646,6 @@ function RaceLive({ player, onPlayerUpdate }) {
           </div>
         )}
 
-        {/* Boost System */}
-        {playerBoat && !playerBoat.finished && (
-          <BoostPanel 
-            raceId={raceId}
-            boatId={player.boat.id}
-            playerId={player.id}
-            boostEnergy={playerBoat.boostEnergy || 0}
-            boostActive={playerBoat.boostActive}
-            boostTimeLeft={playerBoat.boostTimeLeft || 0}
-            onBoostUpdate={fetchRaceData}
-            onPlayerUpdate={onPlayerUpdate}
-          />
-        )}
-
         {/* Heading indicator */}
         {playerBoat && !playerBoat.finished && targetWaypoint && (
           <div className="p-4 border-b border-ocean-700">
@@ -626,6 +657,29 @@ function RaceLive({ player, onPlayerUpdate }) {
             />
           </div>
         )}
+
+        {/* Wind forecast panel */}
+        <WindForecast wind={wind} forecast={raceData.forecast} windChange={raceData.windChange} />
+
+        {/* Sound toggle */}
+        <div className="px-4 py-2 border-b border-ocean-700 flex items-center justify-between">
+          <span className="text-ocean-400 text-xs">Sons d'ambiance</span>
+          <button
+            onClick={() => {
+              initSound();
+              setSoundEnabled(e => !e);
+            }}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              soundEnabled ? 'bg-ocean-500' : 'bg-ocean-800'
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                soundEnabled ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
 
         {/* Rankings */}
         <div className="flex-1 overflow-hidden">
@@ -645,10 +699,55 @@ function RaceLive({ player, onPlayerUpdate }) {
         )}
       </div>
 
+      {/* ── BOOST FLOATING BUTTON (always visible during race) ── */}
+      {playerBoat && !playerBoat.finished && (
+        <button
+          onClick={() => setShowBoostDrawer(d => !d)}
+          className={`fixed bottom-6 right-6 lg:right-[calc(20rem+1.5rem)] z-40 w-16 h-16 rounded-full shadow-xl flex flex-col items-center justify-center gap-0.5 transition-all
+            ${playerBoat.boostActive
+              ? 'bg-yellow-500 animate-pulse shadow-yellow-500/50'
+              : 'bg-ocean-600 hover:bg-ocean-500'
+            }`}
+        >
+          <span className="text-2xl">🚀</span>
+          {playerBoat.boostActive
+            ? <span className="text-yellow-900 text-[10px] font-bold">ACTIF</span>
+            : <span className="text-white text-[10px]">{playerBoat.boostEnergy || 0}%</span>
+          }
+        </button>
+      )}
+
+      {/* ── BOOST DRAWER ── */}
+      {showBoostDrawer && playerBoat && !playerBoat.finished && (
+        <div className="fixed inset-0 z-50 flex items-end" onClick={() => setShowBoostDrawer(false)}>
+          <div
+            className="w-full bg-ocean-900 rounded-t-2xl border-t border-ocean-700 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center px-5 pt-4 pb-2 border-b border-ocean-700">
+              <h3 className="text-white font-bold text-lg">🚀 Boost</h3>
+              <button onClick={() => setShowBoostDrawer(false)} className="text-ocean-400 hover:text-white text-2xl leading-none">✕</button>
+            </div>
+            <div className="p-4">
+              <BoostPanel
+                raceId={raceId}
+                boatId={player.boat.id}
+                playerId={player.id}
+                boostEnergy={playerBoat.boostEnergy || 0}
+                boostActive={playerBoat.boostActive}
+                boostTimeLeft={playerBoat.boostTimeLeft || 0}
+                onBoostUpdate={fetchRaceData}
+                onPlayerUpdate={onPlayerUpdate}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile ranking button - visible only on small screens */}
       <button
         onClick={() => setShowMobileRanking(true)}
-        className="lg:hidden fixed bottom-20 left-4 z-40 bg-ocean-600 hover:bg-ocean-500 text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2"
+        className="lg:hidden fixed bottom-6 left-6 z-40 bg-ocean-600 hover:bg-ocean-500 text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2"
       >
         <span>🏆</span>
         <span className="font-medium">Classement</span>

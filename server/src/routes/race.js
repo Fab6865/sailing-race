@@ -100,19 +100,23 @@ router.get('/:raceId/live', (req, res) => {
   const [id, name, status, startTime, waypointsJson] = raceResult[0].values[0];
   const waypoints = JSON.parse(waypointsJson);
 
-  // Get wind
-  const windResult = db.exec(`
-    SELECT direction, speed FROM wind_state WHERE race_id = ?
-  `, [raceId]);
+  // Get wind (including last_update for countdown)
+  const windResult2 = db.exec(`SELECT direction, speed, last_update FROM wind_state WHERE race_id = ?`, [raceId]);
+  const windResult = windResult2; // alias used below for boats section
 
   let wind = { direction: 0, speed: 15 };
-  if (windResult.length && windResult[0].values.length) {
-    const [dir, spd] = windResult[0].values[0];
+  if (windResult2.length && windResult2[0].values.length) {
+    const [dir, spd, lastUpdate] = windResult2[0].values[0];
+    const WIND_INTERVAL = 3600; // 1 hour in seconds
+    const nextChangeAt = (lastUpdate || 0) + WIND_INTERVAL;
+    const secondsUntilChange = Math.max(0, nextChangeAt - Math.floor(Date.now() / 1000));
     wind = {
       direction: Math.round(dir),
       speed: Math.round(spd * 10) / 10,
       directionText: windDirectionToText(dir),
-      beaufort: getBeaufortScale(spd)
+      beaufort: getBeaufortScale(spd),
+      lastUpdate: lastUpdate || 0,
+      nextChangeIn: secondsUntilChange
     };
   }
 
@@ -188,21 +192,19 @@ router.get('/:raceId/live', (req, res) => {
   // Get rankings
   const rankings = getRaceRankings(db, raceId);
 
-  // Get weather forecast if player has upgrade
-  let forecast = null;
+  // Always include a 3-hour forecast for immersion (upgrade extends it further)
+  let forecastHours = 3;
   if (playerId) {
     const forecastResult = db.exec(`
       SELECT b.weather_forecast FROM boats b
       WHERE b.player_id = ?
     `, [playerId]);
-
     if (forecastResult.length && forecastResult[0].values.length) {
-      const hoursAhead = forecastResult[0].values[0][0] || 0;
-      if (hoursAhead > 0) {
-        forecast = getWindForecast(db, raceId, hoursAhead);
-      }
+      const upgraded = forecastResult[0].values[0][0] || 0;
+      if (upgraded > forecastHours) forecastHours = upgraded;
     }
   }
+  const forecast = getWindForecast(db, raceId, forecastHours);
 
   // Get last wind change for notifications
   const windChange = getLastWindChange(raceId);

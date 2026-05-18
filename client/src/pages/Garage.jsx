@@ -46,8 +46,8 @@ function Garage({ player, onUpdate }) {
       });
 
       if (res.ok) {
-        await fetchData();
-        onUpdate(); // Refresh player data
+        // Refresh upgrades list and player credits simultaneously
+        await Promise.all([fetchData(), onUpdate()]);
       } else {
         const error = await res.json();
         alert(error.error || 'Erreur lors de l\'achat');
