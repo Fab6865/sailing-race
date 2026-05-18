@@ -81,13 +81,18 @@ function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDi
 
   const style = getQualityStyle();
 
-  // Suggestion autopilote avec timer 60s
+  // Suggestion autopilote avec timer 60s et cooldown 3 min après décision
   const [dismissed, setDismissed] = useState(false);
   const [countdown, setCountdown] = useState(60);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
   const lastOptimalRef = useRef(null);
 
   useEffect(() => {
-    if (analysis.deviation <= 30) { lastOptimalRef.current = null; return; }
+    // Ne suggère PAS quand louvoyage requis (heading alternerait en boucle)
+    if (analysis.deviation <= 30 || analysis.needsTacking || analysis.inNoGoZone) {
+      lastOptimalRef.current = null;
+      return;
+    }
     const diff = lastOptimalRef.current === null
       ? 999
       : Math.abs(((analysis.optimalHeading - lastOptimalRef.current) + 180 + 360) % 360 - 180);
@@ -96,16 +101,28 @@ function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDi
       setCountdown(60);
       lastOptimalRef.current = analysis.optimalHeading;
     }
-  }, [analysis.optimalHeading, analysis.deviation]);
+  }, [analysis.optimalHeading, analysis.deviation, analysis.needsTacking]);
 
   useEffect(() => {
-    if (dismissed || analysis.deviation <= 30) return;
+    if (dismissed || analysis.deviation <= 30 || analysis.needsTacking) return;
     if (countdown <= 0) { setDismissed(true); return; }
     const t = setInterval(() => setCountdown(c => c - 1), 1000);
     return () => clearInterval(t);
-  }, [dismissed, analysis.deviation, countdown]);
+  }, [dismissed, analysis.deviation, analysis.needsTacking, countdown]);
 
-  const showSuggestion = analysis.deviation > 30 && !analysis.inNoGoZone && !dismissed;
+  const inCooldown = Date.now() < cooldownUntil;
+  const showSuggestion = analysis.deviation > 30 && !analysis.needsTacking && !analysis.inNoGoZone && !dismissed && !inCooldown;
+
+  const handleAccept = () => {
+    onAcceptSuggestion?.(analysis.optimalHeading);
+    setDismissed(true);
+    setCooldownUntil(Date.now() + 3 * 60 * 1000);
+  };
+
+  const handleIgnore = () => {
+    setDismissed(true);
+    setCooldownUntil(Date.now() + 3 * 60 * 1000);
+  };
 
   return (
     <div className={`${style.bg} border ${style.border} rounded-lg p-3`}>
@@ -172,13 +189,13 @@ function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDi
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => { onAcceptSuggestion?.(analysis.optimalHeading); setDismissed(true); }}
+              onClick={handleAccept}
               className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
             >
               ✓ Accepter
             </button>
             <button
-              onClick={() => setDismissed(true)}
+              onClick={handleIgnore}
               className="flex-1 py-2 bg-ocean-700 hover:bg-ocean-600 text-ocean-300 rounded-lg text-sm transition-colors"
             >
               ✗ Ignorer
