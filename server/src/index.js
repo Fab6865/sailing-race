@@ -47,7 +47,7 @@ app.locals.triggerTick = triggerTick;
 app.listen(PORT, () => {
   console.log(`🚤 Sailing Race Server running on port ${PORT}`);
   console.log(`⏱️  Simulation tick: every 60 seconds`);
-  console.log(`🌊 Wind update: every ~30 minutes`);
+  console.log(`🌊 Wind update: random 5–8h per race`);
   console.log(`🔧 Admin panel: /api/admin`);
 });
 

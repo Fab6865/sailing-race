@@ -562,7 +562,7 @@ function RaceLive({ player, onPlayerUpdate }) {
               </div>
               <div>
                 <div className="text-ocean-400 text-xs">Cap</div>
-                <div className="text-white font-bold">{playerBoat.heading}°</div>
+                <div className="text-white font-bold">{Math.round(playerBoat.heading)}°</div>
               </div>
               <div>
                 <div className="text-ocean-400 text-xs">Voile</div>

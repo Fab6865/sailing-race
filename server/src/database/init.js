@@ -131,9 +131,12 @@ function createTables(db) {
       direction INTEGER DEFAULT 0,
       speed REAL DEFAULT 15.0,
       last_update INTEGER DEFAULT (strftime('%s', 'now')),
+      next_change_at INTEGER DEFAULT 0,
       FOREIGN KEY (race_id) REFERENCES races(id)
     )
   `);
+  // Migration: add next_change_at if missing (existing DBs)
+  try { db.run(`ALTER TABLE wind_state ADD COLUMN next_change_at INTEGER DEFAULT 0`); } catch(e) {}
 
   // Upgrades available
   db.run(`

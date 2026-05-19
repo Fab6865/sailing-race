@@ -101,15 +101,13 @@ router.get('/:raceId/live', (req, res) => {
   const waypoints = JSON.parse(waypointsJson);
 
   // Get wind (including last_update for countdown)
-  const windResult2 = db.exec(`SELECT direction, speed, last_update FROM wind_state WHERE race_id = ?`, [raceId]);
+  const windResult2 = db.exec(`SELECT direction, speed, last_update, next_change_at FROM wind_state WHERE race_id = ?`, [raceId]);
   const windResult = windResult2; // alias used below for boats section
 
   let wind = { direction: 0, speed: 15 };
   if (windResult2.length && windResult2[0].values.length) {
-    const [dir, spd, lastUpdate] = windResult2[0].values[0];
-    const WIND_INTERVAL = 3600; // 1 hour in seconds
-    const nextChangeAt = (lastUpdate || 0) + WIND_INTERVAL;
-    const secondsUntilChange = Math.max(0, nextChangeAt - Math.floor(Date.now() / 1000));
+    const [dir, spd, lastUpdate, nextChangeAt] = windResult2[0].values[0];
+    const secondsUntilChange = nextChangeAt ? Math.max(0, nextChangeAt - Math.floor(Date.now() / 1000)) : null;
     wind = {
       direction: Math.round(dir),
       speed: Math.round(spd * 10) / 10,

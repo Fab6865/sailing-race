@@ -134,7 +134,7 @@ function HeadingIndicator({ currentHeading, targetWaypoint, boatPosition, windDi
       <div className="grid grid-cols-2 gap-2 text-sm">
         <div>
           <span className="text-ocean-400">Cap actuel:</span>
-          <span className="text-white ml-1">{currentHeading}°</span>
+          <span className="text-white ml-1">{Math.round(currentHeading)}°</span>
         </div>
         <div>
           <span className="text-ocean-400">Cap optimal:</span>

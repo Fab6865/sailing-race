@@ -18,9 +18,18 @@ function calculateDistanceNM(lat1, lon1, lat2, lon2) {
 const BASE_TICK_INTERVAL = 60000; // 60 seconds
 const WIND_UPDATE_INTERVAL = 60 * 60 * 1000; // 1 hour (more frequent wind changes)
 
-let lastWindUpdate = Date.now();
 let currentTickInterval = null;
 let currentApp = null;
+
+function pickWindInterval(previousInterval) {
+  const MIN = 18000; // 5 hours
+  const MAX = 28800; // 8 hours
+  let interval;
+  do {
+    interval = Math.floor(MIN + Math.random() * (MAX - MIN));
+  } while (previousInterval && Math.abs(interval - previousInterval) < 1800); // differ by at least 30 min
+  return interval;
+}
 
 // In-memory previous speeds for inertia smoothing (participantId -> knots)
 const prevSpeeds = new Map();
@@ -30,6 +39,9 @@ const botSpeedMultipliers = new Map();
 export function startSimulation(db, app) {
   console.log('🎮 Starting simulation engine...');
   currentApp = app;
+
+  // Reset next_change_at for all active races so the first tick re-assigns a fresh 5–8h interval
+  db.run(`UPDATE wind_state SET next_change_at = 0 WHERE race_id IN (SELECT id FROM races WHERE status = 'active')`);
 
   // Initial tick
   simulationTick(db);
@@ -82,13 +94,25 @@ function simulationTick(db) {
     const [raceId, raceName, waypointsJson] = race;
     const waypoints = JSON.parse(waypointsJson);
 
-    // Update wind per-race based on DB last_update (survives server restarts)
-    const windTimeResult = db.exec(`SELECT last_update FROM wind_state WHERE race_id = ?`, [raceId]);
+    // Update wind per-race — uses next_change_at stored in DB (survives restarts, no circular deps)
+    const windTimeResult = db.exec(`SELECT last_update, next_change_at FROM wind_state WHERE race_id = ?`, [raceId]);
     const lastWindUpdateDb = windTimeResult.length && windTimeResult[0].values.length
       ? (windTimeResult[0].values[0][0] || 0) : 0;
-    if (now - lastWindUpdateDb >= 3600) {
+    const nextChangeAtDb = windTimeResult.length && windTimeResult[0].values.length
+      ? (windTimeResult[0].values[0][1] || 0) : 0;
+
+    // If next_change_at not set yet, assign a random interval (5–8h) from now
+    if (nextChangeAtDb === 0) {
+      const interval = pickWindInterval(null);
+      db.run(`UPDATE wind_state SET next_change_at = ? WHERE race_id = ?`, [now + interval, raceId]);
+    } else if (now >= nextChangeAtDb) {
       updateWind(db, raceId);
-      console.log(`🌬️ Wind updated for race ${raceName}`);
+      const prevInterval = nextChangeAtDb - lastWindUpdateDb;
+      const newInterval = pickWindInterval(prevInterval > 0 ? prevInterval : null);
+      db.run(`UPDATE wind_state SET next_change_at = ? WHERE race_id = ?`, [now + newInterval, raceId]);
+      const h = Math.floor(newInterval / 3600);
+      const m = Math.floor((newInterval % 3600) / 60);
+      console.log(`🌬️ Wind updated for race ${raceName} — next change in ${h}h${m}m`);
     }
 
     // Get wind state
@@ -265,10 +289,11 @@ function checkRaceStarts(db) {
     const initialWindDir = Math.floor(Math.random() * 360);
     const initialWindSpeed = 10 + Math.random() * 15; // 10-25 knots
 
+    const initialInterval = pickWindInterval(null);
     db.run(`
-      INSERT OR REPLACE INTO wind_state (race_id, direction, speed, last_update)
-      VALUES (?, ?, ?, ?)
-    `, [raceId, initialWindDir, initialWindSpeed, now]);
+      INSERT OR REPLACE INTO wind_state (race_id, direction, speed, last_update, next_change_at)
+      VALUES (?, ?, ?, ?, ?)
+    `, [raceId, initialWindDir, initialWindSpeed, now, now + initialInterval]);
 
     // Position all participants at start
     db.run(`
