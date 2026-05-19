@@ -80,10 +80,12 @@ function simulationTick(db) {
     const [raceId, raceName, waypointsJson] = race;
     const waypoints = JSON.parse(waypointsJson);
 
-    // Update wind if needed
-    if (Date.now() - lastWindUpdate > WIND_UPDATE_INTERVAL) {
+    // Update wind per-race based on DB last_update (survives server restarts)
+    const windTimeResult = db.exec(`SELECT last_update FROM wind_state WHERE race_id = ?`, [raceId]);
+    const lastWindUpdateDb = windTimeResult.length && windTimeResult[0].values.length
+      ? (windTimeResult[0].values[0][0] || 0) : 0;
+    if (now - lastWindUpdateDb >= 3600) {
       updateWind(db, raceId);
-      lastWindUpdate = Date.now();
       console.log(`🌬️ Wind updated for race ${raceName}`);
     }
 
