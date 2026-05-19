@@ -123,7 +123,7 @@ function simulationTick(db) {
       continue;
     }
 
-    const now = Math.floor(Date.now() / 1000);
+    // now already defined at top of simulationTick
     
     // Process each boat
     for (const participant of participants[0].values) {
