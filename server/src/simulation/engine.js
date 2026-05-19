@@ -24,6 +24,8 @@ let currentApp = null;
 
 // In-memory previous speeds for inertia smoothing (participantId -> knots)
 const prevSpeeds = new Map();
+// Multiplicateur de vitesse persistant par bot (attribué une fois, stable toute la course)
+const botSpeedMultipliers = new Map();
 
 export function startSimulation(db, app) {
   console.log('🎮 Starting simulation engine...');
@@ -186,9 +188,25 @@ function simulationTick(db) {
         `, [boat.heading, participantId]);
       }
 
+      // Variation de vitesse pour bots amateur et pro (attribuée une fois par bot)
+      if (isBot && !botSpeedMultipliers.has(participantId)) {
+        if (botLevel === 'amateur' || botLevel === 'beginner') {
+          // Amateur : 72% à 100% de la vitesse max → gros écarts
+          botSpeedMultipliers.set(participantId, 0.72 + Math.random() * 0.28);
+        } else if (botLevel === 'pro' || botLevel === 'advanced') {
+          // Pro : 88% à 102% → légère variation
+          botSpeedMultipliers.set(participantId, 0.88 + Math.random() * 0.14);
+        } else {
+          botSpeedMultipliers.set(participantId, 1.0);
+        }
+      }
+      const speedMult = (isBot && botSpeedMultipliers.has(participantId))
+        ? botSpeedMultipliers.get(participantId) : 1.0;
+      const adjustedBoat = isBot ? { ...boat, speedMax: boat.speedMax * speedMult } : boat;
+
       // Move boat (with inertia: pass previous speed so acceleration is gradual)
       const previousSpeed = prevSpeeds.get(participantId) || null;
-      const newPosition = moveBoat(boat, wind, BASE_TICK_INTERVAL / 1000, previousSpeed);
+      const newPosition = moveBoat(adjustedBoat, wind, BASE_TICK_INTERVAL / 1000, previousSpeed);
       prevSpeeds.set(participantId, newPosition.speed);
 
       // Update position
