@@ -70,13 +70,16 @@ export function calculateBoatSpeed(boat, wind) {
   // Calculate final speed
   let speed = baseSpeed * vmgCoeff * sailBonus * stormPenalty;
 
-  // Boost bonus (+30% speed)
+  // Trim bonus (player active sail trimming, max +3 knots)
+  speed += boat.trimBonus || 0;
+
+  // Boost bonus (+3.9 knots flat)
   if (boat.boostActive) {
-    speed *= 1.3;
+    speed += 3.9;
   }
 
-  // Cap at boat's max speed (boost can exceed slightly)
-  const maxSpeed = boat.boostActive ? boat.speedMax * 1.2 : boat.speedMax;
+  // Cap at boat's max speed (boost and trim can exceed slightly)
+  const maxSpeed = boat.boostActive ? boat.speedMax + 5 : boat.speedMax + (boat.trimBonus || 0);
   speed = Math.min(speed, maxSpeed);
 
   // Minimum speed (drift)

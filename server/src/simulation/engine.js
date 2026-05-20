@@ -42,6 +42,9 @@ export function startSimulation(db, app) {
 
   // Reset next_change_at for all active races so the first tick re-assigns a fresh 5–8h interval
   db.run(`UPDATE wind_state SET next_change_at = 0 WHERE race_id IN (SELECT id FROM races WHERE status = 'active')`);
+  // Reset old boost values on startup so no stale boost remains from previous session
+  db.run(`UPDATE race_participants SET boost_active_until = 0, boost_energy = 0`);
+  console.log('🔄 Boost values reset for all participants');
 
   // Initial tick
   simulationTick(db);
@@ -110,6 +113,8 @@ function simulationTick(db) {
       const prevInterval = nextChangeAtDb - lastWindUpdateDb;
       const newInterval = pickWindInterval(prevInterval > 0 ? prevInterval : null);
       db.run(`UPDATE wind_state SET next_change_at = ? WHERE race_id = ?`, [now + newInterval, raceId]);
+      // Reset trim for all players in this race (wind changed = sail trim invalidated)
+      db.run(`UPDATE race_participants SET trim_bonus = 0 WHERE race_id = ? AND finished = 0`, [raceId]);
       const h = Math.floor(newInterval / 3600);
       const m = Math.floor((newInterval % 3600) / 60);
       console.log(`🌬️ Wind updated for race ${raceName} — next change in ${h}h${m}m`);
@@ -130,7 +135,7 @@ function simulationTick(db) {
     const participants = db.exec(`
       SELECT rp.id, rp.boat_id, rp.lat, rp.lon, rp.heading, rp.sail_type, rp.current_waypoint, rp.finished,
              b.is_bot, b.bot_level, b.speed_max, b.vmg_upwind, b.vmg_downwind, b.vmg_reaching, b.storm_resistance,
-             rp.custom_route, rp.current_route_point, rp.boost_active_until
+             rp.custom_route, rp.current_route_point, rp.boost_active_until, rp.trim_bonus
       FROM race_participants rp
       JOIN boats b ON rp.boat_id = b.id
       WHERE rp.race_id = ? AND rp.finished = 0
@@ -156,7 +161,7 @@ function simulationTick(db) {
       const [
         participantId, boatId, lat, lon, heading, sailType, currentWaypoint, finished,
         isBot, botLevel, speedMax, vmgUpwind, vmgDownwind, vmgReaching, stormResistance,
-        customRouteJson, currentRoutePoint, boostActiveUntil
+        customRouteJson, currentRoutePoint, boostActiveUntil, trimBonus
       ] = participant;
 
       if (finished) continue;
@@ -184,7 +189,8 @@ function simulationTick(db) {
         stormResistance,
         customRoute,
         currentRoutePoint: currentRoutePoint || 0,
-        boostActive
+        boostActive,
+        trimBonus: trimBonus || 0
       };
 
       const wind = { direction: windDirection, speed: windSpeed };
@@ -248,9 +254,9 @@ function simulationTick(db) {
           // Boat finished the race
           finishRace(db, raceId, participantId, boatId, now);
         } else {
-          // Move to next waypoint
+          // Move to next waypoint and reset trim (new leg = new sail trim needed)
           db.run(`
-            UPDATE race_participants SET current_waypoint = ? WHERE id = ?
+            UPDATE race_participants SET current_waypoint = ?, trim_bonus = 0 WHERE id = ?
           `, [nextWaypoint, participantId]);
           console.log(`⚓ Boat reached waypoint ${currentWaypoint + 1}`);
         }

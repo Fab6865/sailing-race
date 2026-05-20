@@ -123,7 +123,7 @@ router.get('/:raceId/live', (req, res) => {
     SELECT rp.id, rp.boat_id, rp.lat, rp.lon, rp.heading, rp.sail_type, 
            rp.current_waypoint, rp.finished, rp.finish_position,
            b.name, b.is_bot, b.player_id,
-           rp.boost_energy, rp.boost_active_until
+           rp.boost_energy, rp.boost_active_until, rp.trim_bonus
     FROM race_participants rp
     JOIN boats b ON rp.boat_id = b.id
     WHERE rp.race_id = ?
@@ -136,7 +136,7 @@ router.get('/:raceId/live', (req, res) => {
   
   if (boatsResult.length && boatsResult[0].values.length) {
     for (const row of boatsResult[0].values) {
-      const [participantId, boatId, lat, lon, heading, sailType, currentWaypoint, finished, finishPosition, boatName, isBot, boatPlayerId, boostEnergy, boostActiveUntil] = row;
+      const [participantId, boatId, lat, lon, heading, sailType, currentWaypoint, finished, finishPosition, boatName, isBot, boatPlayerId, boostEnergy, boostActiveUntil, trimBonus] = row;
 
       const boat = {
         id: participantId,
@@ -162,12 +162,13 @@ router.get('/:raceId/live', (req, res) => {
           boat.sailEfficiency = sailEfficiency;
         }
         
-        // Add boost info for player
+        // Add boost + trim info for player
         boat.boostEnergy = boostEnergy || 0;
         boat.boostActive = (boostActiveUntil || 0) > now;
         boat.boostTimeLeft = Math.max(0, (boostActiveUntil || 0) - now);
+        boat.trimBonus = Math.round((trimBonus || 0) * 10) / 10;
         
-        // Calculate current speed for speedometer
+        // Calculate current speed for speedometer (including trim + boost)
         const boatForSpeed = {
           heading: heading || 0,
           sailType: sailType || 'genois',
@@ -176,11 +177,12 @@ router.get('/:raceId/live', (req, res) => {
           vmgDownwind: 0.85,
           vmgReaching: 1.0,
           stormResistance: 0.5,
-          boostActive: boat.boostActive
+          boostActive: boat.boostActive,
+          trimBonus: boat.trimBonus
         };
         const currentSpeed = calculateBoatSpeed(boatForSpeed, wind);
         boat.speed = Math.round(currentSpeed * 10) / 10;
-        boat.maxSpeed = boat.boostActive ? 9.6 : 8.0;
+        boat.maxSpeed = 8.0 + (boat.trimBonus || 0) + (boat.boostActive ? 3.9 : 0);
         
         playerBoat = boat;
       }
@@ -463,7 +465,7 @@ router.post('/:raceId/boost-click', (req, res) => {
 
   // Get participant
   const participantResult = db.exec(`
-    SELECT id, boost_energy, boost_active_until, last_click_time, finished
+    SELECT id, boost_energy, boost_active_until, last_click_time, finished, trim_bonus
     FROM race_participants
     WHERE race_id = ? AND boat_id = ?
   `, [raceId, boatId]);
@@ -472,47 +474,52 @@ router.post('/:raceId/boost-click', (req, res) => {
     return res.status(404).json({ error: 'Not in this race' });
   }
 
-  const [participantId, currentEnergy, boostActiveUntil, lastClickTime, finished] = participantResult[0].values[0];
+  const [participantId, currentEnergy, boostActiveUntil, lastClickTime, finished, currentTrim] = participantResult[0].values[0];
 
   if (finished) {
     return res.status(400).json({ error: 'Race already finished' });
   }
 
-  // Rate limit: max 1 click per 500ms (2 clicks/second)
+  // Rate limit: max 1 click per 500ms
   if (now - (lastClickTime || 0) < 0.5) {
-    return res.json({ 
-      success: false, 
+    return res.json({
+      success: false,
       energy: currentEnergy || 0,
       boostActive: (boostActiveUntil || 0) > now,
       boostTimeLeft: Math.max(0, (boostActiveUntil || 0) - now),
-      message: 'Too fast!' 
+      trimBonus: currentTrim || 0,
+      message: 'Too fast!'
     });
   }
 
-  // Add energy (5% per click, max 100%)
+  // Add energy (5% per click)
   let newEnergy = Math.min(100, (currentEnergy || 0) + 5);
-  let boostActivated = false;
-  let newBoostUntil = boostActiveUntil || 0;
+  let trimUpdated = false;
+  let newTrim = currentTrim || 0;
 
-  // If energy reaches 100%, activate boost
+  // At 100%: increment trim bonus (+0.3 kn, max 3.0 kn)
   if (newEnergy >= 100) {
     newEnergy = 0;
-    newBoostUntil = now + 120; // 2 minutes boost
-    boostActivated = true;
+    if (newTrim < 3.0) {
+      newTrim = Math.min(3.0, newTrim + 0.3);
+      trimUpdated = true;
+    }
   }
 
   db.run(`
     UPDATE race_participants
-    SET boost_energy = ?, boost_active_until = ?, last_click_time = ?
+    SET boost_energy = ?, trim_bonus = ?, last_click_time = ?,
+        boost_active_until = CASE WHEN boost_active_until > ? THEN boost_active_until ELSE 0 END
     WHERE id = ?
-  `, [newEnergy, newBoostUntil, now, participantId]);
+  `, [newEnergy, newTrim, now, now, participantId]);
 
   res.json({
     success: true,
     energy: newEnergy,
-    boostActive: newBoostUntil > now,
-    boostTimeLeft: Math.max(0, newBoostUntil - now),
-    boostActivated
+    boostActive: (boostActiveUntil || 0) > now,
+    boostTimeLeft: Math.max(0, (boostActiveUntil || 0) - now),
+    trimBonus: newTrim,
+    trimUpdated
   });
 });
 

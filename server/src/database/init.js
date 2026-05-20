@@ -123,6 +123,9 @@ function createTables(db) {
   try {
     db.run(`ALTER TABLE race_participants ADD COLUMN last_click_time INTEGER DEFAULT 0`);
   } catch (e) {}
+  try {
+    db.run(`ALTER TABLE race_participants ADD COLUMN trim_bonus REAL DEFAULT 0`);
+  } catch (e) {}
 
   // Wind state (global wind for each race)
   db.run(`

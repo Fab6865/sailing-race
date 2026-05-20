@@ -29,18 +29,21 @@ function getCreditsForPosition(position) {
   return creditTable[position] || Math.max(10, 60 - position * 5);
 }
 
-function BoostPanel({ raceId, boatId, playerId, boostEnergy, boostActive, boostTimeLeft, onBoostUpdate, onPlayerUpdate }) {
+function BoostPanel({ raceId, boatId, playerId, boostEnergy, boostActive, boostTimeLeft, trimBonus, onBoostUpdate, onPlayerUpdate }) {
   const [energy, setEnergy] = useState(boostEnergy);
   const [active, setActive] = useState(boostActive);
   const [timeLeft, setTimeLeft] = useState(boostTimeLeft);
+  const [trim, setTrim] = useState(trimBonus || 0);
   const [clicking, setClicking] = useState(false);
+  const [trimFlash, setTrimFlash] = useState(false);
 
   // Sync with props
   useEffect(() => {
     setEnergy(boostEnergy);
     setActive(boostActive);
     setTimeLeft(boostTimeLeft);
-  }, [boostEnergy, boostActive, boostTimeLeft]);
+    setTrim(trimBonus || 0);
+  }, [boostEnergy, boostActive, boostTimeLeft, trimBonus]);
 
   // Countdown timer
   useEffect(() => {
@@ -66,12 +69,13 @@ function BoostPanel({ raceId, boatId, playerId, boostEnergy, boostActive, boostT
       if (res.ok) {
         const data = await res.json();
         setEnergy(data.energy);
-        setActive(data.boostActive);
-        setTimeLeft(data.boostTimeLeft);
-        
-        if (data.boostActivated) {
-          onBoostUpdate();
+        // Trim click never touches boost state — boost comes from fetchRaceData only
+        if (data.trimBonus !== undefined) setTrim(data.trimBonus);
+        if (data.trimUpdated) {
+          setTrimFlash(true);
+          setTimeout(() => setTrimFlash(false), 1000);
         }
+        onBoostUpdate(); // refresh full race data (speed, position, etc.)
       }
     } catch (err) {
       console.error('Boost click failed:', err);
@@ -115,61 +119,88 @@ function BoostPanel({ raceId, boatId, playerId, boostEnergy, boostActive, boostT
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const trimCycles = Math.round(trim / 0.3);
+  const maxCycles = 10;
+
   return (
-    <div className="p-4 border-b border-ocean-700">
-      <h3 className="text-white font-medium mb-3">🚀 Boost</h3>
-      
-      {active ? (
-        <div className="bg-gradient-to-r from-yellow-500/30 to-orange-500/30 border border-yellow-500 rounded-lg p-4 text-center animate-pulse">
-          <div className="text-2xl mb-1">⚡</div>
-          <div className="text-yellow-400 font-bold text-lg">BOOST ACTIF!</div>
-          <div className="text-white text-2xl font-bold">{formatTime(timeLeft)}</div>
-          <div className="text-yellow-300 text-xs mt-1">+30% vitesse</div>
+    <div className="p-4 border-b border-ocean-700 space-y-3">
+
+      {/* TRIM SECTION */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-white font-medium">⚙️ Réglage voiles</h3>
+          <span className={`font-bold text-sm transition-all ${trimFlash ? 'text-green-300 scale-110' : trim >= 3.0 ? 'text-green-400' : 'text-cyan-400'}`}>
+            {trim > 0 ? `+${trim.toFixed(1)} kn` : '0 kn'}
+          </span>
         </div>
-      ) : (
-        <>
-          {/* Energy bar */}
-          <div className="mb-3">
-            <div className="flex justify-between text-xs text-ocean-400 mb-1">
-              <span>Énergie</span>
-              <span>{energy}%</span>
-            </div>
-            <div className="h-4 bg-ocean-800 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-200"
-                style={{ width: `${energy}%` }}
-              />
-            </div>
+
+        {/* Trim progress dots */}
+        <div className="flex gap-1 mb-2">
+          {Array.from({ length: maxCycles }).map((_, i) => (
+            <div key={i} className={`flex-1 h-2 rounded-full transition-all ${
+              i < trimCycles ? 'bg-cyan-400' : 'bg-ocean-700'
+            }`} />
+          ))}
+        </div>
+
+        {/* Click energy bar */}
+        <div className="mb-2">
+          <div className="flex justify-between text-xs text-ocean-400 mb-1">
+            <span>Prochain palier</span>
+            <span>{energy}%</span>
           </div>
+          <div className="h-3 bg-ocean-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-all duration-200"
+              style={{ width: `${energy}%` }}
+            />
+          </div>
+        </div>
 
-          {/* Click button */}
-          <button
-            onClick={handleClick}
-            disabled={clicking}
-            className="w-full py-4 bg-gradient-to-b from-ocean-600 to-ocean-700 hover:from-ocean-500 hover:to-ocean-600 
-                       active:from-ocean-700 active:to-ocean-800 text-white rounded-lg font-bold text-lg
-                       transition-all transform active:scale-95 border border-ocean-500 shadow-lg
-                       disabled:opacity-50"
-          >
-            <div className="text-2xl mb-1">⛵</div>
-            <div>CLIQUER!</div>
-            <div className="text-xs opacity-70">+5% énergie par clic</div>
-          </button>
+        <button
+          onClick={handleClick}
+          disabled={clicking || trim >= 3.0}
+          className="w-full py-3 bg-gradient-to-b from-ocean-600 to-ocean-700 hover:from-ocean-500 hover:to-ocean-600
+                     active:from-ocean-700 active:to-ocean-800 text-white rounded-lg font-bold
+                     transition-all transform active:scale-95 border border-ocean-500 shadow-lg
+                     disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <div className="text-xl mb-0.5">⚙️</div>
+          <div className="text-sm">{trim >= 3.0 ? 'MAX ATTEINT' : 'RÉGLER'}</div>
+          <div className="text-[10px] opacity-70">+5% • 100% = +0.3 kn</div>
+        </button>
 
-          {/* Buy boost option */}
+        {trim >= 3.0 && (
+          <div className="text-center text-green-400 text-xs mt-1 font-medium">
+            ✓ Réglage optimal +3.0 kn
+          </div>
+        )}
+        <div className="text-ocean-500 text-[10px] text-center mt-1">
+          Se remet à 0 au waypoint et au changement de vent
+        </div>
+      </div>
+
+      {/* BOOST SECTION */}
+      <div className="border-t border-ocean-700 pt-3">
+        <h3 className="text-white font-medium mb-2">🚀 Boost</h3>
+        {active ? (
+          <div className="bg-gradient-to-r from-yellow-500/30 to-orange-500/30 border border-yellow-500 rounded-lg p-3 text-center animate-pulse">
+            <div className="text-xl mb-0.5">⚡</div>
+            <div className="text-yellow-400 font-bold">BOOST ACTIF!</div>
+            <div className="text-white text-xl font-bold">{formatTime(timeLeft)}</div>
+            <div className="text-yellow-300 text-xs">+3.9 kn</div>
+          </div>
+        ) : (
           <button
             onClick={handleBuyBoost}
-            className="w-full mt-2 py-2 bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-500/50 
+            className="w-full py-2 bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-500/50
                        text-yellow-400 rounded-lg text-sm transition-colors"
           >
-            💰 Acheter boost (50 crédits)
+            💰 Acheter boost — 50 crédits<br/>
+            <span className="text-[10px] opacity-70">+3.9 kn pendant 2 minutes</span>
           </button>
-
-          <div className="text-ocean-400 text-xs text-center mt-2">
-            100% énergie = Boost 2 min (+30% vitesse)
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -532,13 +563,15 @@ function RaceLive({ player, onPlayerUpdate }) {
           </div>
         </div>
 
-        {/* Map */}
-        <RaceMap
-          waypoints={race.waypoints}
-          boats={boats}
-          playerBoat={playerBoat}
-          wind={wind}
-        />
+        {/* Map — padding-bottom on mobile so bottom HUD doesn't hide waypoints */}
+        <div className="w-full h-full pb-20 lg:pb-0">
+          <RaceMap
+            waypoints={race.waypoints}
+            boats={boats}
+            playerBoat={playerBoat}
+            wind={wind}
+          />
+        </div>
 
         {/* Player boat info with SpeedGauge */}
         {playerBoat && (
@@ -724,10 +757,10 @@ function RaceLive({ player, onPlayerUpdate }) {
               : 'bg-ocean-600 hover:bg-ocean-500'
             }`}
         >
-          <span className="text-2xl">🚀</span>
+          <span className="text-xl">{playerBoat.boostActive ? '🚀' : '⚙️'}</span>
           {playerBoat.boostActive
-            ? <span className="text-yellow-900 text-[10px] font-bold">ACTIF</span>
-            : <span className="text-white text-[10px]">{playerBoat.boostEnergy || 0}%</span>
+            ? <span className="text-yellow-900 text-[10px] font-bold">BOOST</span>
+            : <span className="text-white text-[10px]">+{(playerBoat.trimBonus || 0).toFixed(1)}kn</span>
           }
         </button>
       )}
@@ -751,6 +784,7 @@ function RaceLive({ player, onPlayerUpdate }) {
                 boostEnergy={playerBoat.boostEnergy || 0}
                 boostActive={playerBoat.boostActive}
                 boostTimeLeft={playerBoat.boostTimeLeft || 0}
+                trimBonus={playerBoat.trimBonus || 0}
                 onBoostUpdate={fetchRaceData}
                 onPlayerUpdate={onPlayerUpdate}
               />

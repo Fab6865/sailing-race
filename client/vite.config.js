@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://sailing-race.onrender.com',
+        target: 'http://localhost:3001',
         changeOrigin: true
       }
     }
